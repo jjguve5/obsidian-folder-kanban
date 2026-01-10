@@ -536,7 +536,7 @@ class FolderKanbanView extends ItemView {
 		}
 	}
 
-	async scanFolderForCards() {
+	scanFolderForCards() {
 		if (!this.boardFile?.parent) return;
 
 		const parentFolder = this.boardFile.parent;
@@ -611,7 +611,7 @@ class FolderKanbanView extends ItemView {
 
 		// Guard: if no board file, show placeholder
 		if (!this.boardFile) {
-			container.createDiv({ cls: 'kanban-placeholder', text: 'No board file loaded. Please open a Board.md file.' });
+			container.createDiv({ cls: 'kanban-placeholder', text: 'No board file loaded. Please open a board file.' });
 			return;
 		}
 
@@ -836,7 +836,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', {text: 'Folder Kanban Settings'});
+		new Setting(containerEl).setName('Folder Kanban settings').setHeading();
 
 		// Board file name setting
 		new Setting(containerEl)
@@ -957,7 +957,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 								.onClick(async () => {
 									delete this.plugin.settings.tagColors[activeBoardPath][tag];
 									await this.plugin.saveSettings();
-									this.display();
+								void this.display();
 								});
 						}
 					});
@@ -1038,7 +1038,7 @@ class BoardCustomizeModal extends Modal {
 	async onOpen() {
 		const {contentEl} = this;
 		contentEl.empty();
-		contentEl.createEl('h2', { text: `Customize ${this.folderName} Board` });
+		new Setting(contentEl).setName(`Customize ${this.folderName} board`).setHeading();
 
 		// Load board content to get current columns
 		if (this.boardFile) {
@@ -1103,7 +1103,7 @@ class BoardCustomizeModal extends Modal {
 			
 			tagItem.addEventListener('remove', () => {
 				delete this.tempTagColors[tag];
-				this.onOpen();
+				void this.onOpen();
 			});
 			
 			tagGrid.appendChild(tagItem);
@@ -1122,7 +1122,7 @@ class BoardCustomizeModal extends Modal {
 			type: 'text',
 			attr: { placeholder: 'e.g., Anatomy' } 
 	});
-	tagNameInput.addEventListener('change', (e) => {
+	tagNameInput.addEventListener('change', (e: Event) => {
 		const target = e.target as HTMLInputElement;
 		tagNameValue = target.value;
 	});
@@ -1131,7 +1131,7 @@ class BoardCustomizeModal extends Modal {
 		type: 'color',
 		attr: { value: tagColorValue } 
 	});
-	colorPicker.addEventListener('change', (e) => {
+	colorPicker.addEventListener('change', (e: Event) => {
 		const target = e.target as HTMLInputElement;
 		tagColorValue = target.value;
 	});
@@ -1232,11 +1232,11 @@ class ChecklistView extends ItemView {
 				if (it.checked) item.setAttribute('checked', '');
 				
 				item.addEventListener('toggle', (e: CustomEvent<{ checked: boolean }>) => {
-					this.toggleItem(index, e.detail.checked);
+					void this.toggleItem(index, e.detail.checked);
 				});
 				
 				item.addEventListener('remove', () => {
-					this.removeItem(index);
+					void this.removeItem(index);
 				});
 				
 				list.appendChild(item);

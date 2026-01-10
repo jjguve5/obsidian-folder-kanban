@@ -1,6 +1,6 @@
 {
   "name": "folder-kanban",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Automatically creates kanban boards from folder structures with auto-tagged cards",
   "main": "main.js",
   "scripts": {
@@ -24,3 +24,4 @@
     "typescript": "4.7.4"
   }
 }
+

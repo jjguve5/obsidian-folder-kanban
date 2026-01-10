@@ -11,9 +11,11 @@ import {
 	Notice,
 	Modal,
 	MarkdownView,
-	setIcon
+	setIcon,
+	ViewStateResult
 } from 'obsidian';
 import './components';
+import { KanbanCard, KanbanProgress, ChecklistItem, TagColorEditItem } from './components';
 
 interface FolderKanbanSettings {
 	boardFileName: string;
@@ -71,6 +73,18 @@ const dedupeCards = (cards: CardData[]): CardData[] => {
 const VIEW_TYPE_FOLDER_KANBAN = 'folder-kanban-view';
 const VIEW_TYPE_CHECKLIST = 'checklist-view';
 
+// Interface for view type checking
+interface IFolderKanbanView extends ItemView {
+	refresh(): Promise<void>;
+	folderPath?: string;
+	boardFile?: TFile;
+}
+
+interface IChecklistView extends ItemView {
+	filePath?: string;
+	updateChecklistDisplay(): void;
+}
+
 export default class FolderKanbanPlugin extends Plugin {
 	settings: FolderKanbanSettings;
 	boardStates: Map<string, BoardState> = new Map();
@@ -78,9 +92,9 @@ export default class FolderKanbanPlugin extends Plugin {
 	refreshAllKanbanViews() {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
 		leaves.forEach(leaf => {
-			const view = leaf.view as any;
+			const view = leaf.view as IFolderKanbanView;
 			if (view && typeof view.refresh === 'function') {
-				view.refresh();
+				void view.refresh();
 			}
 		});
 	}
@@ -111,7 +125,7 @@ export default class FolderKanbanPlugin extends Plugin {
 					setTimeout(() => {
 						const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
 						for (const leaf of mdLeaves) {
-							const v = leaf.view as any;
+							const v = leaf.view as MarkdownView;
 							if (v?.file?.path === file.path) {
 								leaf.detach();
 							}
@@ -128,10 +142,10 @@ export default class FolderKanbanPlugin extends Plugin {
 					// Refresh all kanban views that might be affected by this file
 					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
 					for (const leaf of leaves) {
-						const view = leaf.view as any;
+						const view = leaf.view as IFolderKanbanView;
 						if (view?.folderPath && file.path.startsWith(view.folderPath)) {
 							// File is in the folder being displayed, refresh the board
-							view.refresh();
+							void view.refresh();
 						}
 					}
 				}
@@ -145,10 +159,10 @@ export default class FolderKanbanPlugin extends Plugin {
 					// Refresh all kanban views that might be affected by this file
 					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
 					for (const leaf of leaves) {
-						const view = leaf.view as any;
+						const view = leaf.view as IFolderKanbanView;
 						if (view?.folderPath && file.path.startsWith(view.folderPath)) {
 							// File was deleted from the folder being displayed, refresh the board
-							view.refresh();
+							void view.refresh();
 						}
 					}
 				}
@@ -162,10 +176,10 @@ export default class FolderKanbanPlugin extends Plugin {
 					// Refresh all kanban views that might be affected by this file
 					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
 					for (const leaf of leaves) {
-						const view = leaf.view as any;
+						const view = leaf.view as IFolderKanbanView;
 						if (view?.folderPath && file.path.startsWith(view.folderPath)) {
 							// File was created in the folder being displayed, refresh the board
-							view.refresh();
+							void view.refresh();
 						}
 					}
 				}
@@ -179,10 +193,10 @@ export default class FolderKanbanPlugin extends Plugin {
 					// Refresh all kanban views that might be affected by this file
 					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
 					for (const leaf of leaves) {
-						const view = leaf.view as any;
+						const view = leaf.view as IFolderKanbanView;
 						// Check both old and new paths
 						if (view?.folderPath && (file.path.startsWith(view.folderPath) || oldPath.startsWith(view.folderPath))) {
-							view.refresh();
+							void view.refresh();
 						}
 					}
 				}
@@ -210,9 +224,9 @@ export default class FolderKanbanPlugin extends Plugin {
 			id: 'refresh-kanban-board',
 			name: 'Refresh Kanban Board',
 			callback: () => {
-				const activeView = this.app.workspace.getActiveViewOfType(FolderKanbanView);
+				const activeView = this.app.workspace.getActiveViewOfType(FolderKanbanView) as FolderKanbanView | null;
 				if (activeView) {
-					activeView.refresh();
+					void activeView.refresh();
 					new Notice('Board refreshed!');
 				}
 			}
@@ -275,7 +289,7 @@ export default class FolderKanbanPlugin extends Plugin {
 		let targetLeaf: WorkspaceLeaf | null = null;
 		
 		for (const leaf of kanbanLeaves) {
-			const view = leaf.view as any;
+			const view = leaf.view as IFolderKanbanView;
 			if (view?.boardFile?.path === file.path) {
 				targetLeaf = leaf;
 				break;
@@ -286,7 +300,7 @@ export default class FolderKanbanPlugin extends Plugin {
 			// If not in kanban view, check markdown leaves
 			const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
 			for (const leaf of mdLeaves) {
-				const v = leaf.view as any;
+				const v = leaf.view as MarkdownView;
 				if (v?.file?.path === file.path) {
 					targetLeaf = leaf;
 					break;
@@ -312,7 +326,7 @@ export default class FolderKanbanPlugin extends Plugin {
 
 		// Check if this specific board is already open by checking the view's boardFile
 		for (const existingLeaf of leaves) {
-			const view = existingLeaf.view as any;
+			const view = existingLeaf.view as IFolderKanbanView;
 			if (view?.boardFile?.path === file.path) {
 				leaf = existingLeaf;
 				break;
@@ -461,21 +475,21 @@ class FolderKanbanView extends ItemView {
 	}
 
 	async onOpen() {
-		await this.refresh();
+		await void this.refresh();
 	}
 
-	async setState(state: any, result: any): Promise<void> {
+	async setState(state: Record<string, unknown>, result: ViewStateResult): Promise<void> {
 		if (state.file) {
-			const file = this.app.vault.getAbstractFileByPath(state.file);
+			const file = this.app.vault.getAbstractFileByPath(state.file as string);
 			if (file instanceof TFile) {
 				this.boardFile = file;
 				this.folderPath = file.parent?.path || '';
-				await this.refresh();
+				await void this.refresh();
 			}
 		}
 	}
 
-	getState(): any {
+	getState(): Record<string, unknown> {
 		return {
 			file: this.boardFile?.path
 		};
@@ -618,7 +632,7 @@ class FolderKanbanView extends ItemView {
 		const editBtn = headerEl.createEl('button', { text: 'Customize', cls: 'kanban-edit-btn' });
 		editBtn.addEventListener('click', () => {
 			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => {
-				this.refresh();
+				void this.refresh();
 			}).open();
 		});
 
@@ -677,7 +691,7 @@ class FolderKanbanView extends ItemView {
 		const tagColor = boardColors[card.tag] || boardColors['default'] || '#3b82f6';
 
 		// Create custom kanban-card element
-		const cardEl = document.createElement('kanban-card') as any;
+		const cardEl = document.createElement('kanban-card') as KanbanCard;
 		cardEl.setAttribute('title', card.title);
 		cardEl.setAttribute('tag', card.tag);
 		cardEl.setAttribute('tagColor', tagColor);
@@ -697,7 +711,7 @@ class FolderKanbanView extends ItemView {
 		container.appendChild(cardEl);
 
 		// Fetch checklist info from stored data and update card
-		this.plugin.getChecklist(card.filePath).then((items) => {
+		void this.plugin.getChecklist(card.filePath).then((items) => {
 			const total = items.length;
 			const checked = items.filter(i => i.checked).length;
 			const nextTaskItem = items.find(i => !i.checked);
@@ -712,9 +726,9 @@ class FolderKanbanView extends ItemView {
 				if (nextTaskEl) {
 					if (nextTask) {
 						nextTaskEl.textContent = nextTask;
-						nextTaskEl.style.display = 'block';
+						nextTaskEl.classList.remove('hidden');
 					} else {
-						nextTaskEl.style.display = 'none';
+						nextTaskEl.classList.add('hidden');
 					}
 				}
 			}
@@ -774,7 +788,7 @@ class FolderKanbanView extends ItemView {
 	}
 
 	setupDropZone(element: HTMLElement, columnIndex: number) {
-		element.addEventListener('dragover', (e) => {
+		element.addEventListener('dragover', (e: DragEvent) => {
 			e.preventDefault();
 			element.addClass('drag-over');
 		});
@@ -783,7 +797,7 @@ class FolderKanbanView extends ItemView {
 			element.removeClass('drag-over');
 		});
 
-		element.addEventListener('drop', async (e) => {
+		element.addEventListener('drop', async (e: DragEvent) => {
 			e.preventDefault();
 			element.removeClass('drag-over');
 			
@@ -846,7 +860,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 				}));
 
 		// Custom columns section
-		containerEl.createEl('h3', {text: 'Column Customization'});
+		new Setting(containerEl).setHeading().setName('Column customization');
 		containerEl.createEl('p', {
 			text: 'Define custom columns for different folder patterns. Use folder names (e.g., "learn", "entertainment", "game") as keys.',
 			cls: 'setting-item-description'
@@ -908,10 +922,10 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 				}));
 
 		// Tag colors section
-		containerEl.createEl('h3', {text: 'Tag Color Customization'});
+		new Setting(containerEl).setHeading().setName('Tag color customization');
 		
 		// Get active board
-		const activeLeaf = this.app.workspace.getActiveViewOfType(FolderKanbanView);
+		const activeLeaf = this.app.workspace.getActiveViewOfType(FolderKanbanView) as FolderKanbanView | null;
 		const activeBoardPath = activeLeaf?.boardFile?.path;
 		
 		if (activeBoardPath) {
@@ -1049,7 +1063,7 @@ class BoardCustomizeModal extends Modal {
 		}
 
 		// Columns section
-		contentEl.createEl('h3', { text: 'Columns' });
+		new Setting(contentEl).setHeading().setName('Columns');
 		
 		const columnsContainer = contentEl.createDiv({ cls: 'customize-section' });
 		
@@ -1068,7 +1082,7 @@ class BoardCustomizeModal extends Modal {
 			}));
 
 		// Tag colors section
-		contentEl.createEl('h3', { text: 'Tag Colors' });
+		new Setting(contentEl).setHeading().setName('Tag colors');
 		const colorsContainer = contentEl.createDiv({ cls: 'customize-section' });
 
 		// Get all unique tags (detected + configured)
@@ -1088,11 +1102,11 @@ class BoardCustomizeModal extends Modal {
 			if (tag === 'default') return; // Skip default
 			
 			const color = this.tempTagColors[tag] || '#3b82f6';
-			const tagItem = document.createElement('tag-color-edit-item') as any;
+			const tagItem = document.createElement('tag-color-edit-item') as TagColorEditItem;
 			tagItem.setAttribute('tagName', tag);
 			tagItem.setAttribute('color', color);
 			
-			tagItem.addEventListener('colorchange', (e: any) => {
+			tagItem.addEventListener('colorchange', (e: CustomEvent<{ color: string }>) => {
 				this.tempTagColors[tag] = e.detail.color;
 			});
 			
@@ -1129,22 +1143,7 @@ class BoardCustomizeModal extends Modal {
 			tagColorValue = (e.target as HTMLInputElement).value;
 		});
 
-		const addBtn = addCustomRow.createEl('button', { text: 'Add', cls: 'add-custom-btn' });
-		addBtn.style.padding = '8px 16px';
-		addBtn.style.backgroundColor = 'var(--interactive-accent)';
-		addBtn.style.color = 'var(--text-on-accent)';
-		addBtn.style.border = 'none';
-		addBtn.style.borderRadius = '4px';
-		addBtn.style.cursor = 'pointer';
-		addBtn.style.fontWeight = '500';
-		addBtn.style.transition = 'all 0.2s';
-		addBtn.addEventListener('mouseenter', () => {
-			addBtn.style.backgroundColor = 'var(--interactive-accent-hover)';
-		});
-		addBtn.addEventListener('mouseleave', () => {
-			addBtn.style.backgroundColor = 'var(--interactive-accent)';
-		});
-		addBtn.addEventListener('click', () => {
+		const addBtn = addCustomRow.createEl('button', { text: 'Add', cls: 'add-custom-btn' });		addBtn.addEventListener('click', () => {
 			if (tagNameValue && /^#[0-9A-F]{6}$/i.test(tagColorValue)) {
 				this.tempTagColors[tagNameValue] = tagColorValue;
 				this.onOpen();
@@ -1220,14 +1219,14 @@ class ChecklistView extends ItemView {
 	getDisplayText(): string { return 'Checklist'; }
 	getIcon(): string { return 'check-square'; }
 
-	async onOpen() { await this.refresh(); }
+	async onOpen() { await void this.refresh(); }
 
-	async setState(state: any): Promise<void> {
+	async setState(state: Record<string, unknown>): Promise<void> {
 		if (state?.file) {
-			const file = this.app.vault.getAbstractFileByPath(state.file);
+			const file = this.app.vault.getAbstractFileByPath(state.file as string);
 			if (file instanceof TFile) {
 				this.file = file;
-				await this.refresh();
+				await void this.refresh();
 			}
 		}
 	}
@@ -1244,11 +1243,11 @@ class ChecklistView extends ItemView {
 		if (this.file) {
 			this.items = await this.plugin.getChecklist(this.file.path);
 			this.items.forEach((it, index) => {
-				const item = document.createElement('checklist-item') as any;
+				const item = document.createElement('checklist-item') as ChecklistItem;
 				item.setAttribute('text', it.text);
 				if (it.checked) item.setAttribute('checked', '');
 				
-				item.addEventListener('toggle', (e: any) => {
+				item.addEventListener('toggle', (e: CustomEvent<{ checked: boolean }>) => {
 					this.toggleItem(index, e.detail.checked);
 				});
 				
@@ -1273,28 +1272,28 @@ class ChecklistView extends ItemView {
 		};
 		// Multiple listeners to ensure reliability in Obsidian views
 		newInput.addEventListener('keydown', async (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || (e as any).keyCode === 13) {
+			if (e.key === 'Enter' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || (e as KeyboardEvent).keyCode === 13) {
 				e.preventDefault();
 				e.stopPropagation();
-				(e as any).stopImmediatePropagation?.();
+				(e as Event).stopImmediatePropagation?.();
 				await tryAdd();
 			}
 		}, true);
 		newInput.addEventListener('keypress', async (e: KeyboardEvent) => {
-			const code = (e as any).keyCode || (e as any).which;
+			const code = (e as KeyboardEvent).keyCode || (e as KeyboardEvent).which;
 			if (e.key === 'Enter' || code === 13) {
 				e.preventDefault();
 				e.stopPropagation();
-				(e as any).stopImmediatePropagation?.();
+				(e as Event).stopImmediatePropagation?.();
 				await tryAdd();
 			}
 		}, true);
 		newInput.addEventListener('keyup', async (e: KeyboardEvent) => {
-			const code = (e as any).keyCode || (e as any).which;
+			const code = (e as KeyboardEvent).keyCode || (e as KeyboardEvent).which;
 			if (e.key === 'Enter' || code === 13) {
 				e.preventDefault();
 				e.stopPropagation();
-				(e as any).stopImmediatePropagation?.();
+				(e as Event).stopImmediatePropagation?.();
 				await tryAdd();
 			}
 		}, true);
@@ -1317,7 +1316,7 @@ class ChecklistView extends ItemView {
 		await this.plugin.setChecklist(this.file.path, items);
 		this.focusNewInputNext = true;
 		this.plugin.refreshAllKanbanViews();
-		await this.refresh();
+		await void this.refresh();
 	}
 
 	async toggleItem(index: number, checked: boolean) {
@@ -1327,7 +1326,7 @@ class ChecklistView extends ItemView {
 			items[index].checked = checked;
 			await this.plugin.setChecklist(this.file.path, items);
 			this.plugin.refreshAllKanbanViews();
-			await this.refresh();
+			await void this.refresh();
 		}
 	}
 
@@ -1337,6 +1336,13 @@ class ChecklistView extends ItemView {
 		items.splice(index, 1);
 		await this.plugin.setChecklist(this.file.path, items);
 		this.plugin.refreshAllKanbanViews();
-		await this.refresh();
+		await void this.refresh();
 	}
 }
+
+
+
+
+
+
+

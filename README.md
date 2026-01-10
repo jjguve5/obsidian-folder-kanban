@@ -13,6 +13,9 @@ An Obsidian plugin that transforms your folder structure into a Kanban board vie
 ![Customize Modal](screenshots/customize-modal.png)
 *Per-board customization: edit columns and tag colors*
 
+![Checklist Sidebar](screenshots/checklist-sidebar.png)
+*Sidebar checklist view for quick task management*
+
 ## 🎯 Features
 
 ### 📊 **Folder-Based Kanban Boards**

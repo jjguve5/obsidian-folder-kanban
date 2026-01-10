@@ -114,7 +114,7 @@ export default class FolderKanbanPlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => {
 				if (file && file.name === this.settings.boardFileName) {
-					this.openKanbanBoardInPlace(file);
+					void this.openKanbanBoardInPlace(file);
 					// Close any markdown views of this board file to prevent duplicates
 					setTimeout(() => {
 						const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
@@ -203,11 +203,9 @@ export default class FolderKanbanPlugin extends Plugin {
 				if (file instanceof TFolder) {
 					menu.addItem((item) => {
 						item
-							.setTitle('Create Folder Board')
+							.setTitle('Create folder board')
 							.setIcon('layout-dashboard')
-							.onClick(async () => {
-								await this.createBoardInFolder(file);
-							});
+							.onClick(() => { void this.createBoardInFolder(file); });
 					});
 				}
 			})
@@ -216,7 +214,7 @@ export default class FolderKanbanPlugin extends Plugin {
 		// Add command to create/refresh board
 		this.addCommand({
 			id: 'refresh-kanban-board',
-			name: 'Refresh Kanban Board',
+			name: 'Refresh kanban board',
 			callback: () => {
 				const activeView = this.app.workspace.getActiveViewOfType(FolderKanbanView) as FolderKanbanView | null;
 				if (activeView) {
@@ -241,7 +239,7 @@ export default class FolderKanbanPlugin extends Plugin {
 				const file = this.app.workspace.getActiveFile();
 				const path = file instanceof TFile ? file.path : undefined;
 				if (rightLeaf) {
-					rightLeaf.setViewState({ type: VIEW_TYPE_CHECKLIST, state: { file: path }, active: true });
+					void rightLeaf.setViewState({ type: VIEW_TYPE_CHECKLIST, state: { file: path }, active: true });
 				}
 			}
 
@@ -252,27 +250,27 @@ export default class FolderKanbanPlugin extends Plugin {
 				this.app.workspace.setActiveLeaf(rightLeaf);
 			}
 		};
-		this.app.workspace.onLayoutReady(async () => {
+		this.app.workspace.onLayoutReady(() => {
 			ensureChecklistLeaf();
-		});
-		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
-			const file = this.app.workspace.getActiveFile();
-			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHECKLIST);
-			if (leaves.length > 0) {
-				const leaf = leaves[0];
-				leaf.setViewState({ type: VIEW_TYPE_CHECKLIST, state: { file: file instanceof TFile ? file.path : undefined } });
-			}
-			if (leaves.length === 0) {
-				ensureChecklistLeaf();
-			}
-			// Also enforce board view for Board.md
-			if (file && file.name === this.settings.boardFileName) {
-				const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (mdView && file instanceof TFile) {
-					this.openKanbanBoardInPlace(file);
+			this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+				const file = this.app.workspace.getActiveFile();
+				const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHECKLIST);
+				if (leaves.length > 0) {
+					const leaf = leaves[0];
+					void leaf.setViewState({ type: VIEW_TYPE_CHECKLIST, state: { file: file instanceof TFile ? file.path : undefined } });
 				}
-			}
-		}));
+				if (leaves.length === 0) {
+					ensureChecklistLeaf();
+				}
+				// Also enforce board view for Board.md
+				if (file && file.name === this.settings.boardFileName) {
+					const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+					if (mdView && file instanceof TFile) {
+						void this.openKanbanBoardInPlace(file);
+					}
+				}
+			}));
+		});
 
 		this.addSettingTab(new FolderKanbanSettingTab(this.app, this));
 	}
@@ -416,7 +414,7 @@ export default class FolderKanbanPlugin extends Plugin {
 				this.settings.checklists[filePath] = { items: parsed };
 				await this.saveSettings();
 				return parsed;
-			} catch (e) {
+			} catch {
 				return [];
 			}
 		}
@@ -520,6 +518,15 @@ class FolderKanbanView extends ItemView {
 		// Default columns
 		this.columns = ['To Do', 'In Progress', 'Done'];
 
+		// Apply custom columns based on folder name patterns (case-insensitive)
+		const folderName = this.boardFile.parent?.name.toLowerCase() || '';
+		for (const [pattern, cols] of Object.entries(this.plugin.settings.customColumns)) {
+			if (folderName.includes(pattern.toLowerCase()) && cols.length > 0) {
+				this.columns = [...cols];
+				break;
+			}
+		}
+
 		// Try to find "## Columns" section in board file
 		const boardContent = this.boardContent || '';
 		const columnMatch = boardContent.match(/##\s+Columns\s*\n([^\n]*)/i);
@@ -536,20 +543,22 @@ class FolderKanbanView extends ItemView {
 		}
 	}
 
-	scanFolderForCards() {
+	async scanFolderForCards() {
 		if (!this.boardFile?.parent) return;
 
 		const parentFolder = this.boardFile.parent;
 		const newCards: CardData[] = [];
+		const configDirName = this.app.vault.configDir.split('/').pop();
 
-		// Get all subfolders
+		// Get all subfolders (exclude Obsidian config folder if present)
 		const subfolders = parentFolder.children.filter(
-			child => child instanceof TFolder && child.name !== this.app.vault.configDir.split('/').pop()
+			(child): child is TFolder => child instanceof TFolder && child.name !== configDirName
 		);
 
-		// For each subfolder, get all markdown files
+		// For each subfolder, collect notes and tag by subfolder name
 		for (const subfolder of subfolders) {
-		if (!(subfolder instanceof TFolder)) continue;
+			const tag = subfolder.name.toLowerCase();
+			await this.collectNotesFromFolder(subfolder, tag, newCards);
 		}
 
 		// Deduplicate by filePath to avoid rendering duplicates
@@ -664,8 +673,10 @@ class FolderKanbanView extends ItemView {
 
 			// Extra DOM-level guard: remove any accidental duplicates that might slip in
 			const seen = new Set<string>();
-			Array.from(contentEl.children).filter(el => el.hasAttribute('data-file-path')).forEach((el) => {
-				const key = (el as HTMLElement).dataset.filePath?.toLowerCase();
+			Array.from(contentEl.children).forEach((el) => {
+				if (!(el instanceof HTMLElement)) return;
+				if (!el.hasAttribute('data-file-path')) return;
+				const key = el.dataset.filePath?.toLowerCase();
 				if (!key) return;
 				if (seen.has(key)) {
 					el.remove();
@@ -692,7 +703,8 @@ class FolderKanbanView extends ItemView {
 		// Remove any existing rendered card with same filePath in this container (case-insensitive)
 		const targetKey = card.filePath.toLowerCase();
 		Array.from(container.children).forEach((el) => {
-			const key = (el as HTMLElement).dataset.filePath?.toLowerCase();
+			if (!(el instanceof HTMLElement)) return;
+			const key = el.dataset.filePath?.toLowerCase();
 			if (key && key === targetKey) {
 				el.remove();
 			}
@@ -739,10 +751,10 @@ class FolderKanbanView extends ItemView {
 		}, false);
 
 		// Click to open note
-		cardEl.addEventListener('click', async () => {
+		cardEl.addEventListener('click', () => {
 			const file = this.app.vault.getAbstractFileByPath(card.filePath);
 			if (file instanceof TFile) {
-				await this.app.workspace.getLeaf(false).openFile(file);
+				void this.app.workspace.getLeaf(false).openFile(file);
 			}
 		});
 
@@ -754,10 +766,10 @@ class FolderKanbanView extends ItemView {
 			menu.addItem((item) => {
 				item.setTitle('Open in new pane')
 					.setIcon('go-to-file')
-					.onClick(async () => {
+					.onClick(() => {
 						const file = this.app.vault.getAbstractFileByPath(card.filePath);
 						if (file instanceof TFile) {
-							await this.app.workspace.getLeaf('split').openFile(file);
+							void this.app.workspace.getLeaf('split').openFile(file);
 						}
 					});
 			});
@@ -788,13 +800,13 @@ class FolderKanbanView extends ItemView {
 			element.removeClass('drag-over');
 		});
 
-		element.addEventListener('drop', async (e: DragEvent) => {
+		element.addEventListener('drop', (e: DragEvent) => {
 			e.preventDefault();
 			element.removeClass('drag-over');
 			
 			const filePath = e.dataTransfer?.getData('text/plain');
 			if (filePath) {
-				await this.moveCard(filePath, columnIndex);
+				void this.moveCard(filePath, columnIndex);
 			}
 		});
 	}
@@ -836,7 +848,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName('Folder Kanban settings').setHeading();
+		new Setting(containerEl).setName('Board options').setHeading();
 
 		// Board file name setting
 		new Setting(containerEl)
@@ -875,10 +887,12 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.addButton(btn => btn
 					.setButtonText('Remove')
-					.onClick(async () => {
-						delete this.plugin.settings.customColumns[pattern];
-						await this.plugin.saveSettings();
-						void void this.display();
+					.onClick(() => {
+						void (async () => {
+							delete this.plugin.settings.customColumns[pattern];
+							await this.plugin.saveSettings();
+							void this.display();
+						})();
 					}));
 		});
 
@@ -897,26 +911,28 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		})
 		.addButton(btn => btn
 			.setButtonText('Add')
-			.onClick(async () => {
-				const pattern = patternInputEl?.value?.trim();
-				const columns = columnsInputEl?.value?.trim();
+			.onClick(() => {
+				void (async () => {
+					const pattern = patternInputEl?.value?.trim();
+					const columns = columnsInputEl?.value?.trim();
 
-				if (pattern && columns) {
-					const columnsList = columns.split(',').map((c: string) => c.trim()).filter((c: string) => c);
-					if (columnsList.length > 0) {
-						this.plugin.settings.customColumns[pattern] = columnsList;
-						await this.plugin.saveSettings();
-						if (patternInputEl) patternInputEl.value = '';
-						if (columnsInputEl) columnsInputEl.value = '';
-						void this.display();
+					if (pattern && columns) {
+						const columnsList = columns.split(',').map((c: string) => c.trim()).filter((c: string) => c);
+						if (columnsList.length > 0) {
+							this.plugin.settings.customColumns[pattern] = columnsList;
+							await this.plugin.saveSettings();
+							if (patternInputEl) patternInputEl.value = '';
+							if (columnsInputEl) columnsInputEl.value = '';
+							void this.display();
+						}
 					}
-				}
+				})();
 			}));
 		// Tag colors section
 		new Setting(containerEl).setHeading().setName('Tag color customization');
 		
 		// Get active board
-		const activeLeaf = this.app.workspace.getActiveViewOfType(FolderKanbanView) as FolderKanbanView | null;
+		const activeLeaf = this.app.workspace.getActiveViewOfType(FolderKanbanView);
 		const activeBoardPath = activeLeaf?.boardFile?.path;
 		
 		if (activeBoardPath) {
@@ -954,10 +970,12 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 					.addButton(btn => {
 						if (tag !== 'default') {
 							btn.setButtonText('Remove')
-								.onClick(async () => {
-									delete this.plugin.settings.tagColors[activeBoardPath][tag];
-									await this.plugin.saveSettings();
-								void this.display();
+								.onClick(() => {
+									void (async () => {
+										delete this.plugin.settings.tagColors[activeBoardPath][tag];
+										await this.plugin.saveSettings();
+										void this.display();
+									})();
 								});
 						}
 					});
@@ -978,17 +996,19 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 				})
 				.addButton(btn => btn
 					.setButtonText('Add')
-					.onClick(async () => {
-						const tag = tagInputEl?.value?.trim();
-						const color = colorInputEl?.value?.trim();
+					.onClick(() => {
+						void (async () => {
+							const tag = tagInputEl?.value?.trim();
+							const color = colorInputEl?.value?.trim();
 
-						if (tag && color && /^#[0-9A-F]{6}$/i.test(color)) {
-							this.plugin.settings.tagColors[activeBoardPath][tag] = color;
-							await this.plugin.saveSettings();
-							if (tagInputEl) tagInputEl.value = '';
-							if (colorInputEl) colorInputEl.value = '';
-							void this.display();
-						}
+							if (tag && color && /^#[0-9A-F]{6}$/i.test(color)) {
+								this.plugin.settings.tagColors[activeBoardPath][tag] = color;
+								await this.plugin.saveSettings();
+								if (tagInputEl) tagInputEl.value = '';
+								if (colorInputEl) colorInputEl.value = '';
+								void this.display();
+							}
+						})();
 					}));
 		} else {
 			containerEl.createEl('p', {
@@ -1121,20 +1141,20 @@ class BoardCustomizeModal extends Modal {
 		const tagNameInput = addCustomRow.createEl('input', { 
 			type: 'text',
 			attr: { placeholder: 'e.g., Anatomy' } 
-	});
-	tagNameInput.addEventListener('change', (e: Event) => {
-		const target = e.target as HTMLInputElement;
-		tagNameValue = target.value;
-	});
+		});
+		tagNameInput.addEventListener('change', (e: Event) => {
+			const target = e.target as HTMLInputElement;
+			tagNameValue = target.value;
+		});
 
-	const colorPicker = addCustomRow.createEl('input', { 
-		type: 'color',
-		attr: { value: tagColorValue } 
-	});
-	colorPicker.addEventListener('change', (e: Event) => {
-		const target = e.target as HTMLInputElement;
-		tagColorValue = target.value;
-	});
+		const colorPicker = addCustomRow.createEl('input', { 
+			type: 'color',
+			attr: { value: tagColorValue } 
+		});
+		colorPicker.addEventListener('change', (e: Event) => {
+			const target = e.target as HTMLInputElement;
+			tagColorValue = target.value;
+		});
 
 	const addBtn = addCustomRow.createEl('button', { text: 'Add', cls: 'add-custom-btn' });		
 	addBtn.addEventListener('click', () => {
@@ -1148,35 +1168,22 @@ class BoardCustomizeModal extends Modal {
 	const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
 	
 	const saveBtn = btnContainer.createEl('button', { text: 'Save', cls: 'modal-save-btn' });
-	saveBtn.addEventListener('click', async () => {
-		// Save columns to Board.md if it exists
-		if (this.boardFile) {
-			const boardContent = this.boardContent;
-			
-			// Check if ## Columns section exists
-			if (boardContent.includes('## Columns')) {
-				// Empty block - columns section exists but no action needed
-			}
-				
-				// Write the modified content back to the file
+	saveBtn.addEventListener('click', () => {
+		void (async () => {
+			if (this.boardFile) {
+				const boardContent = this.boardContent;
 				await this.app.vault.modify(this.boardFile, boardContent);
-				
-				// Wait a moment to ensure file is written
 				await new Promise(resolve => setTimeout(resolve, 100));
 			}
-			
-			// Save tag colors
 			this.plugin.settings.tagColors[this.boardPath] = this.tempTagColors;
 			await this.plugin.saveSettings();
 			new Notice('Board settings saved!');
-			
-			// Refresh the board to show new columns
 			if (this.onSave) {
 				this.onSave();
 			}
-			
 			this.close();
-		});
+		})();
+	});
 
 		const cancelBtn = btnContainer.createEl('button', { text: 'Cancel', cls: 'modal-cancel-btn' });
 		cancelBtn.addEventListener('click', () => this.close());
@@ -1216,7 +1223,8 @@ class ChecklistView extends ItemView {
 	}
 
 	async refresh() {
-		const container = this.containerEl.children[1] as HTMLElement || this.containerEl.createDiv();
+		const existing = this.containerEl.children.item(1);
+		const container = existing instanceof HTMLElement ? existing : this.containerEl.createDiv();
 		container.empty();
 		container.addClass('checklist-side-view');
 
@@ -1255,28 +1263,28 @@ class ChecklistView extends ItemView {
 			}
 		};
 		// Multiple listeners to ensure reliability in Obsidian views
-		newInput.addEventListener('keydown', async (e: KeyboardEvent) => {
+		newInput.addEventListener('keydown', (e: KeyboardEvent) => {
 			if (e.key === 'Enter' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) ) {
 				e.preventDefault();
 				e.stopPropagation();
-				(e as Event).stopImmediatePropagation?.();
-				await tryAdd();
+				e.stopImmediatePropagation?.();
+				void tryAdd();
 			}
 		}, true);
-		newInput.addEventListener('keypress', async (e: KeyboardEvent) => {
+		newInput.addEventListener('keypress', (e: KeyboardEvent) => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
 				e.stopPropagation();
-				(e as Event).stopImmediatePropagation?.();
-				await tryAdd();
+				e.stopImmediatePropagation?.();
+				void tryAdd();
 			}
 		}, true);
-		newInput.addEventListener('keyup', async (e: KeyboardEvent) => {
+		newInput.addEventListener('keyup', (e: KeyboardEvent) => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
 				e.stopPropagation();
-				(e as Event).stopImmediatePropagation?.();
-				await tryAdd();
+				e.stopImmediatePropagation?.();
+				void tryAdd();
 			}
 		}, true);
 

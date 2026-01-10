@@ -14,6 +14,7 @@ export class KanbanCard extends HTMLElement {
 		const tagColor = this.getAttribute('tagColor') || '#3b82f6';
 		const checked = parseInt(this.getAttribute('checked') || '0');
 		const total = parseInt(this.getAttribute('total') || '0');
+		const nextTask = this.getAttribute('nextTask') || '';
 		const hasProgress = total > 0;
 
 		const style = document.createElement('style');
@@ -61,17 +62,25 @@ export class KanbanCard extends HTMLElement {
 				gap: 8px;
 				padding-left: 6px;
 			}
+			.card-header {
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				gap: 8px;
+			}
 			.kanban-card-title {
 				font-weight: 600;
 				color: var(--text-normal, #ececec);
 				word-wrap: break-word;
 				line-height: 1.4;
 				font-size: 0.95em;
+				flex: 1;
 			}
 			.kanban-card-tag {
 				display: flex;
 				gap: 6px;
 				flex-wrap: wrap;
+				flex-shrink: 0;
 			}
 			.tag {
 				display: inline-block;
@@ -79,10 +88,26 @@ export class KanbanCard extends HTMLElement {
 				background: linear-gradient(135deg, var(--tag-color), rgba(255,255,255,0.1));
 				color: white;
 				border-radius: 14px;
-				font-size: 0.8em;
+				font-size: 0.75em;
 				font-weight: 600;
 				border: 1px solid rgba(255,255,255,0.15);
 				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+			}
+			.next-task {
+				font-size: 0.85em;
+				color: var(--text-muted, #999);
+				font-style: italic;
+				padding: 8px 0 4px 0;
+				line-height: 1.3;
+				border-top: 1px solid var(--background-modifier-border, #3f3f3f);
+				margin-top: 6px;
+				padding-top: 8px;
+			}
+			.next-task::before {
+				content: '→ ';
+				color: var(--tag-color);
+				font-weight: bold;
+				margin-right: 4px;
 			}
 		`;
 
@@ -91,6 +116,9 @@ export class KanbanCard extends HTMLElement {
 
 		const contentDiv = document.createElement('div');
 		contentDiv.className = 'card-content';
+
+		const headerDiv = document.createElement('div');
+		headerDiv.className = 'card-header';
 
 		const titleEl = document.createElement('div');
 		titleEl.className = 'kanban-card-title';
@@ -103,8 +131,9 @@ export class KanbanCard extends HTMLElement {
 		tagSpan.textContent = `#${tag}`;
 		tagEl.appendChild(tagSpan);
 
-		contentDiv.appendChild(titleEl);
-		contentDiv.appendChild(tagEl);
+		headerDiv.appendChild(titleEl);
+		headerDiv.appendChild(tagEl);
+		contentDiv.appendChild(headerDiv);
 
 		const progressComponent = document.createElement('kanban-progress') as any;
 		progressComponent.setAttribute('checked', checked.toString());
@@ -112,6 +141,15 @@ export class KanbanCard extends HTMLElement {
 		progressComponent.setAttribute('tagColor', tagColor);
 		progressComponent.style.display = hasProgress ? 'block' : 'none';
 		contentDiv.appendChild(progressComponent);
+
+		// Create next task element (hidden by default, shown when attribute is set)
+		const nextTaskEl = document.createElement('div');
+		nextTaskEl.className = 'next-task';
+		nextTaskEl.style.display = nextTask ? 'block' : 'none';
+		if (nextTask) {
+			nextTaskEl.textContent = nextTask;
+		}
+		contentDiv.appendChild(nextTaskEl);
 
 		container.appendChild(contentDiv);
 

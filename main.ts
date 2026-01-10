@@ -641,16 +641,37 @@ class FolderKanbanView extends ItemView {
 			this.app.vault.read(fileForProgress).then((content) => {
 				const lines = content.split('\n');
 				let total = 0, checked = 0;
+				let nextTask = '';
 				for (const line of lines) {
 					const m = line.match(/^\s*[-*]\s+\[([x ])\]\s+(.+)$/i);
 					if (m) {
 						total++;
-						if (m[1].toLowerCase() === 'x') checked++;
+						const isChecked = m[1].toLowerCase() === 'x';
+						if (isChecked) {
+							checked++;
+						} 
+						// For next task, check if unchecked (not 'x')
+						if (!isChecked && !nextTask) {
+							nextTask = m[2].trim();
+						}
 					}
 				}
-				if (total > 0) {
-					cardEl.setAttribute('checked', checked.toString());
-					cardEl.setAttribute('total', total.toString());
+				// Always update checked/total
+				cardEl.setAttribute('checked', checked.toString());
+				cardEl.setAttribute('total', total.toString());
+				
+				// Directly update the next task element in the shadow DOM
+				const shadowRoot = cardEl.shadowRoot;
+				if (shadowRoot) {
+					const nextTaskEl = shadowRoot.querySelector('.next-task') as HTMLElement;
+					if (nextTaskEl) {
+						if (nextTask) {
+							nextTaskEl.textContent = nextTask;
+							nextTaskEl.style.display = 'block';
+						} else {
+							nextTaskEl.style.display = 'none';
+						}
+					}
 				}
 			}).catch(() => {});
 		}

@@ -86,11 +86,38 @@ export default class FolderKanbanPlugin extends Plugin {
 
 
 
-		// When a file is opened, check if it's a Board.md
+		// When a file is opened, check if it's a Board.md and convert to kanban view
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => {
 				if (file && file.name === this.settings.boardFileName) {
 					this.openKanbanBoardInPlace(file);
+					// Close any markdown views of this board file to prevent duplicates
+					setTimeout(() => {
+						const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
+						for (const leaf of mdLeaves) {
+							const v = leaf.view as any;
+							if (v?.file?.path === file.path) {
+								leaf.detach();
+							}
+						}
+					}, 100);
+				}
+			})
+		);
+
+		// Real-time updates: When any file is modified, refresh board views
+		this.registerEvent(
+			this.app.vault.on('modify', (file) => {
+				if (file instanceof TFile) {
+					// Refresh all kanban views that might be affected by this file
+					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+					for (const leaf of leaves) {
+						const view = leaf.view as any;
+						if (view?.folderPath && file.path.startsWith(view.folderPath)) {
+							// File is in the folder being displayed, refresh the board
+							view.refresh();
+						}
+					}
 				}
 			})
 		);
@@ -150,7 +177,7 @@ export default class FolderKanbanPlugin extends Plugin {
 				this.app.workspace.setActiveLeaf(rightLeaf);
 			}
 		};
-		this.app.workspace.onLayoutReady(() => {
+		this.app.workspace.onLayoutReady(async () => {
 			ensureChecklistLeaf();
 		});
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
@@ -178,20 +205,33 @@ export default class FolderKanbanPlugin extends Plugin {
 	}
 
 	async openKanbanBoardInPlace(file: TFile) {
-		// Prefer converting the markdown leaf that opened this file
-		const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
+		// First check if this board is already open in a kanban view
+		const kanbanLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
 		let targetLeaf: WorkspaceLeaf | null = null;
-		for (const leaf of mdLeaves) {
-			const v = leaf.view as any;
-			if (v?.file?.path === file.path) {
+		
+		for (const leaf of kanbanLeaves) {
+			const view = leaf.view as any;
+			if (view?.boardFile?.path === file.path) {
 				targetLeaf = leaf;
 				break;
 			}
 		}
 
 		if (!targetLeaf) {
-			const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
-			targetLeaf = existing[0] || this.app.workspace.getLeaf(false);
+			// If not in kanban view, check markdown leaves
+			const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
+			for (const leaf of mdLeaves) {
+				const v = leaf.view as any;
+				if (v?.file?.path === file.path) {
+					targetLeaf = leaf;
+					break;
+				}
+			}
+		}
+
+		if (!targetLeaf) {
+			// Use first available kanban leaf or create new
+			targetLeaf = kanbanLeaves[0] || this.app.workspace.getLeaf(false);
 		}
 
 		await targetLeaf.setViewState({
@@ -203,12 +243,20 @@ export default class FolderKanbanPlugin extends Plugin {
 
 	async openKanbanBoard(file: TFile) {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
-		let leaf: WorkspaceLeaf;
+		let leaf: WorkspaceLeaf | null = null;
 
-		if (leaves.length > 0) {
-			leaf = leaves[0];
-		} else {
-			leaf = this.app.workspace.getLeaf(false);
+		// Check if this specific board is already open by checking the view's boardFile
+		for (const existingLeaf of leaves) {
+			const view = existingLeaf.view as any;
+			if (view?.boardFile?.path === file.path) {
+				leaf = existingLeaf;
+				break;
+			}
+		}
+
+		// If not open, create a new tab for this board
+		if (!leaf) {
+			leaf = this.app.workspace.getLeaf('tab');
 		}
 
 		await leaf.setViewState({
@@ -326,6 +374,12 @@ class FolderKanbanView extends ItemView {
 				await this.refresh();
 			}
 		}
+	}
+
+	getState(): any {
+		return {
+			file: this.boardFile?.path
+		};
 	}
 
 	async refresh() {

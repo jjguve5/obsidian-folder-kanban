@@ -623,7 +623,7 @@ class FolderKanbanView extends ItemView {
 
 		const editBtn = headerEl.createEl('button', { text: 'Customize', cls: 'kanban-edit-btn' });
 		editBtn.addEventListener('click', () => {
-			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => void this.refresh()).open();
+			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => { void this.refresh(); }).open();
 		});
 
 		// Create 

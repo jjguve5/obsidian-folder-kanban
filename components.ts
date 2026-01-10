@@ -67,8 +67,8 @@ export class KanbanCard extends HTMLElement {
 	}
 
 	attributeChangedCallback(name: string) {
-		if ((name === 'checked' || name === 'total') && this.querySelector) {
-			const progressEl = this.querySelector('kanban-progress') as KanbanProgress;
+		if (name === 'checked' || name === 'total') {
+			const progressEl = this.find('kanban-progress') as KanbanProgress | null;
 			if (progressEl) {
 				progressEl.setAttribute(name, this.getAttribute(name) || '0');
 				// Show/hide progress based on total value

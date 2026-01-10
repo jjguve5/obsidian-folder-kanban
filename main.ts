@@ -549,8 +549,7 @@ class FolderKanbanView extends ItemView {
 
 		// For each subfolder, get all markdown files
 		for (const subfolder of subfolders) {
-			const tag = (subfolder as TFolder).name;
-			await this.collectNotesFromFolder(subfolder as TFolder, tag, newCards);
+		if (!(subfolder instanceof TFolder)) continue;
 		}
 
 		// Deduplicate by filePath to avoid rendering duplicates
@@ -663,7 +662,7 @@ class FolderKanbanView extends ItemView {
 
 			// Extra DOM-level guard: remove any accidental duplicates that might slip in
 			const seen = new Set<string>();
-			Array.from(contentEl.querySelectorAll('[data-file-path]')).forEach((el) => {
+			Array.from(contentEl.children).filter(el => el.hasAttribute('data-file-path')).forEach((el) => {
 				const key = (el as HTMLElement).dataset.filePath?.toLowerCase();
 				if (!key) return;
 				if (seen.has(key)) {
@@ -690,7 +689,7 @@ class FolderKanbanView extends ItemView {
 
 		// Remove any existing rendered card with same filePath in this container (case-insensitive)
 		const targetKey = card.filePath.toLowerCase();
-		container.querySelectorAll('[data-file-path]').forEach((el) => {
+		Array.from(container.children).forEach((el) => {
 			const key = (el as HTMLElement).dataset.filePath?.toLowerCase();
 			if (key && key === targetKey) {
 				el.remove();
@@ -712,7 +711,7 @@ class FolderKanbanView extends ItemView {
 
 			const shadowRoot = cardEl.shadowRoot;
 			if (shadowRoot) {
-				const nextTaskEl = shadowRoot.querySelector('.next-task');
+				const nextTaskEl = Array.from(shadowRoot.children).find(el => el.classList.contains('next-task'));
 				if (nextTaskEl) {
 					if (nextTask) {
 						nextTaskEl.textContent = nextTask;
@@ -882,32 +881,35 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		});
 
 		// Add new column pattern
-		new Setting(containerEl)
-			.setName('Add new folder pattern')
-			.addText(text => text
-				.setPlaceholder('e.g., "project"')
-				.onChange(value => text.inputEl.dataset.pattern = value))
-			.addText(text => text
-				.setPlaceholder('e.g., "Backlog, Active, Review, Done"')
-				.onChange(value => text.inputEl.dataset.columns = value))
-			.addButton(btn => btn
-				.setButtonText('Add')
-				.onClick(async () => {
-				const patternInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"project\\""]')[0] as HTMLInputElement;
-				const columnsInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"Backlog, Active, Review, Done\\""]')[0] as HTMLInputElement;
-				
-				const pattern = patternInput?.value?.trim();
-				const columns = columnsInput?.value?.trim();
+	let patternInputEl: HTMLInputElement | undefined;
+	let columnsInputEl: HTMLInputElement | undefined;
+	new Setting(containerEl)
+		.setName('Add new folder pattern')
+		.addText(text => {
+			patternInputEl = text.inputEl;
+			return text.setPlaceholder('e.g., "project"');
+		})
+		.addText(text => {
+			columnsInputEl = text.inputEl;
+			return text.setPlaceholder('e.g., "Backlog, Active, Review, Done"');
+		})
+		.addButton(btn => btn
+			.setButtonText('Add')
+			.onClick(async () => {
+				const pattern = patternInputEl?.value?.trim();
+				const columns = columnsInputEl?.value?.trim();
 
 				if (pattern && columns) {
 					const columnsList = columns.split(',').map((c: string) => c.trim()).filter((c: string) => c);
 					if (columnsList.length > 0) {
 						this.plugin.settings.customColumns[pattern] = columnsList;
 						await this.plugin.saveSettings();
-						}
+						patternInputEl!.value = '';
+						columnsInputEl!.value = '';
+						void this.display();
 					}
-				}));
-
+				}
+			}));
 		// Tag colors section
 		new Setting(containerEl).setHeading().setName('Tag color customization');
 		
@@ -1107,7 +1109,7 @@ class BoardCustomizeModal extends Modal {
 
 		// Add new tag section
 		const addCustomSection = colorsContainer.createDiv({ cls: 'add-custom-tag-section' });
-		const addCustomTitle = addCustomSection.createEl('div', { cls: 'customize-section-label', text: 'Add custom tag color' });
+		addCustomSection.createEl('div', { cls: 'customize-section-label', text: 'Add custom tag color' });
 		
 		const addCustomRow = addCustomSection.createDiv({ cls: 'setting' });
 
@@ -1317,6 +1319,9 @@ class ChecklistView extends ItemView {
 		await this.refresh();
 	}
 }
+
+
+
 
 
 

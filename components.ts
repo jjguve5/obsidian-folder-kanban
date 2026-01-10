@@ -8,26 +8,13 @@ export class KanbanCard extends HTMLElement {
 	}
 
 	connectedCallback() {
-		this.render();
-	}
-
-	attributeChangedCallback() {
-		if (this.shadowRoot) {
-			this.shadowRoot.innerHTML = '';
-			this.render();
-		}
-	}
-
-	static get observedAttributes() {
-		return ['title', 'tag', 'tagColor', 'checked', 'total'];
-	}
-
-	private render() {
+	
 		const title = this.getAttribute('title') || 'Untitled';
 		const tag = this.getAttribute('tag') || 'default';
 		const tagColor = this.getAttribute('tagColor') || '#3b82f6';
 		const checked = parseInt(this.getAttribute('checked') || '0');
 		const total = parseInt(this.getAttribute('total') || '0');
+		const hasProgress = total > 0;
 
 		const style = document.createElement('style');
 		style.textContent = `
@@ -119,13 +106,12 @@ export class KanbanCard extends HTMLElement {
 		contentDiv.appendChild(titleEl);
 		contentDiv.appendChild(tagEl);
 
-		if (total > 0) {
-			const progressComponent = document.createElement('kanban-progress') as any;
-			progressComponent.setAttribute('checked', checked.toString());
-			progressComponent.setAttribute('total', total.toString());
-			progressComponent.setAttribute('tagColor', tagColor);
-			contentDiv.appendChild(progressComponent);
-		}
+		const progressComponent = document.createElement('kanban-progress') as any;
+		progressComponent.setAttribute('checked', checked.toString());
+		progressComponent.setAttribute('total', total.toString());
+		progressComponent.setAttribute('tagColor', tagColor);
+		progressComponent.style.display = hasProgress ? 'block' : 'none';
+		contentDiv.appendChild(progressComponent);
 
 		container.appendChild(contentDiv);
 
@@ -134,6 +120,22 @@ export class KanbanCard extends HTMLElement {
 
 		// Make element draggable and bubble events
 		this.setAttribute('draggable', 'true');
+	}
+
+	attributeChangedCallback(name: string) {
+		if ((name === 'checked' || name === 'total') && this.shadowRoot) {
+			const progressEl = this.shadowRoot.querySelector('kanban-progress') as any;
+			if (progressEl) {
+				progressEl.setAttribute(name, this.getAttribute(name) || '0');
+				// Show/hide progress based on total value
+				const total = parseInt(this.getAttribute('total') || '0');
+				progressEl.style.display = total > 0 ? 'block' : 'none';
+			}
+		}
+	}
+
+	static get observedAttributes() {
+		return ['checked', 'total'];
 	}
 
 	private lightenColor(color: string): string {
@@ -264,11 +266,88 @@ export class KanbanProgress extends HTMLElement {
 	}
 
 	connectedCallback() {
-		this.render();
+	
+		const checked = parseInt(this.getAttribute('checked') || '0');
+		const total = parseInt(this.getAttribute('total') || '0');
+		const tagColor = this.getAttribute('tagColor') || '#3b82f6';
+		const percent = total > 0 ? Math.min(100, Math.max(0, (checked / total) * 100)) : 0;
+
+		const style = document.createElement('style');
+		style.textContent = `
+			:host {
+				display: block;
+			}
+			.progress-container {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				width: 100%;
+			}
+			.progress-bar {
+				flex: 1;
+				height: 16px;
+				background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+				border: 1px solid rgba(255,255,255,0.15);
+				border-radius: 8px;
+				overflow: hidden;
+				box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+				position: relative;
+			}
+			.progress-fill {
+				height: 100%;
+				background: linear-gradient(90deg, ${tagColor} 0%, ${this.lightenColor(tagColor)} 100%);
+				border-radius: 8px;
+				transition: width 0.3s ease;
+				box-shadow: inset -1px 0 0 rgba(255,255,255,0.15), 0 0 8px rgba(0,0,0,0.2);
+				position: relative;
+				width: 0;
+			}
+			.progress-fill::after {
+				content: '';
+				position: absolute;
+				top: 0;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				background: linear-gradient(180deg, rgba(255,255,255,0.3) 0%, transparent 100%);
+				border-radius: 8px;
+			}
+			.progress-text {
+				font-size: 11px;
+				color: var(--text-normal, #ececec);
+				font-weight: 600;
+				min-width: 40px;
+				text-align: right;
+				opacity: 0.8;
+				letter-spacing: 0.3px;
+			}
+		`;
+
+		const container = document.createElement('div');
+		container.className = 'progress-container';
+
+		const progressBar = document.createElement('div');
+		progressBar.className = 'progress-bar';
+
+		const progressFill = document.createElement('div');
+		progressFill.className = 'progress-fill';
+		progressFill.style.width = `${percent}%`;
+
+		progressBar.appendChild(progressFill);
+
+		const progressText = document.createElement('div');
+		progressText.className = 'progress-text';
+		progressText.textContent = `${checked}/${total}`;
+
+		container.appendChild(progressBar);
+		container.appendChild(progressText);
+
+		this.shadowRoot?.appendChild(style);
+		this.shadowRoot?.appendChild(container);
 	}
 
-	attributeChangedCallback() {
-		if (this.shadowRoot) {
+	attributeChangedCallback(name: string) {
+		if ((name === 'checked' || name === 'total' || name === 'tagColor') && this.shadowRoot) {
 			this.shadowRoot.innerHTML = '';
 			this.render();
 		}
@@ -358,7 +437,7 @@ export class KanbanProgress extends HTMLElement {
 		this.shadowRoot?.appendChild(container);
 	}
 
-	lightenColor(hex: string): string {
+	private lightenColor(hex: string): string {
 		const num = parseInt(hex.replace('#', ''), 16);
 		const r = Math.min(255, (num >> 16) + 60);
 		const g = Math.min(255, ((num >> 8) & 0x00ff) + 60);

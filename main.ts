@@ -385,10 +385,10 @@ class FolderKanbanView extends ItemView {
 		// Deduplicate by filePath to avoid rendering duplicates
 		const dedupedCards = dedupeCards(newCards);
 
-		// Update cards while preserving column assignments
-		const existingCards = new Map(this.cards.map(c => [c.filePath, c]));
+		// Update cards while preserving column assignments (case-insensitive keys)
+		const existingCards = new Map(this.cards.map(c => [c.filePath.toLowerCase(), c]));
 		this.cards = dedupedCards.map(card => {
-			const existing = existingCards.get(card.filePath);
+			const existing = existingCards.get(card.filePath.toLowerCase());
 			return existing || { ...card, column: this.columns[0] };
 		});
 
@@ -485,10 +485,23 @@ class FolderKanbanView extends ItemView {
 			// Render cards (display-level dedupe per column)
 			const uniqueCards = new Map<string, CardData>();
 			for (const card of cardsInColumn) {
-				if (!uniqueCards.has(card.filePath)) uniqueCards.set(card.filePath, card);
+				const key = card.filePath.toLowerCase();
+				if (!uniqueCards.has(key)) uniqueCards.set(key, card);
 			}
 			uniqueCards.forEach(card => {
 				this.renderCard(contentEl, card);
+			});
+
+			// Extra DOM-level guard: remove any accidental duplicates that might slip in
+			const seen = new Set<string>();
+			Array.from(contentEl.querySelectorAll('[data-file-path]')).forEach((el) => {
+				const key = (el as HTMLElement).dataset.filePath?.toLowerCase();
+				if (!key) return;
+				if (seen.has(key)) {
+					el.remove();
+				} else {
+					seen.add(key);
+				}
 			});
 		});
 	}
@@ -505,9 +518,11 @@ class FolderKanbanView extends ItemView {
 		cardEl.dataset.filePath = card.filePath;
 		cardEl.setAttribute('draggable', 'true');
 
-		// Remove any existing rendered card with same filePath in this container (extra safety)
+		// Remove any existing rendered card with same filePath in this container (case-insensitive)
+		const targetKey = card.filePath.toLowerCase();
 		container.querySelectorAll('[data-file-path]').forEach((el) => {
-			if ((el as HTMLElement).dataset.filePath === card.filePath) {
+			const key = (el as HTMLElement).dataset.filePath?.toLowerCase();
+			if (key && key === targetKey) {
 				el.remove();
 			}
 		});

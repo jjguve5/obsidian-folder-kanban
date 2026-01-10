@@ -878,7 +878,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 					.onClick(async () => {
 						delete this.plugin.settings.customColumns[pattern];
 						await this.plugin.saveSettings();
-						this.display();
+						void void this.display();
 					}));
 		});
 
@@ -1321,6 +1321,7 @@ class ChecklistView extends ItemView {
 		await this.refresh();
 	}
 }
+
 
 
 

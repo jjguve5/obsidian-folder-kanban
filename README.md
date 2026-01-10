@@ -1,125 +1,220 @@
-# Folder Kanban Plugin
+# Folder Kanban
 
-An Obsidian plugin that automatically creates kanban boards from your folder structure. Cards are automatically generated from notes in subfolders and tagged with the folder name.
+An Obsidian plugin that transforms your folder structure into a Kanban board view with automatic card generation from markdown notes.
 
-## Features
+![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple)
+![License](https://img.shields.io/badge/License-MIT-blue)
 
-- 📁 **Automatic Card Generation**: All notes in subfolders become kanban cards
-- 🏷️ **Auto-Tagging**: Cards are automatically tagged with their subfolder name
-- 🎯 **Smart Column Detection**: Detects appropriate columns based on folder context
-  - Learning folders → "To Learn | Learning | Mastered"
-  - Entertainment folders → "Want To Watch | Watching | Done"
-  - Game folders → "To Do | In Progress | Done"
-- 🖱️ **Drag & Drop**: Move cards between columns with drag and drop
-- 💾 **Persistent State**: Card positions are saved automatically
-- 📝 **Click to Open**: Click any card to open the note
+## 🎯 Features
 
-## How It Works
+### 📊 **Folder-Based Kanban Boards**
+- Create a `Board.md` file in any folder to view it as a Kanban board
+- Notes in subfolders automatically become cards
+- Tags are derived from the subfolder names (e.g., notes in `Frontend/` get the `frontend` tag)
+- Organize your notes visually without changing their file structure
 
-1. Create a `Board.md` file in any folder
-2. Create subfolders for different categories (e.g., Anatomy, French, Geography)
-3. Add notes to those subfolders
-4. Open `Board.md` and the kanban board will automatically appear!
+### 📋 **Customizable Columns**
+- Define column names in the `Board.md` file using a `## Columns` section
+- Format: `## Columns` followed by comma-separated column names (e.g., `Todo, In Progress, Done`)
+- Cards track position by column index, so renaming columns preserves card positions
+- Falls back to default columns (To Do, In Progress, Done) if not specified
 
-### Example Structure
+### 🎨 **Per-Board Tag Colors**
+- Customize tag colors for each board independently
+- Click the "Customize" button on any board to configure colors
+- Default color scheme provided for common tags (frontend, backend, database, design)
+- Colors stored per-board, so different projects can have different color schemes
 
-```
-Learning/
-  Board.md              ← Kanban board
-  Anatomy/
-    Basics of Anatomy.md
-    Skeletal System.md
-  French/
-    Basics of French.md
-    Verbs.md
-  Maths/
-    Basics of Mathematics.md
-```
+### ✅ **Progress Tracking**
+- Displays progress bars on cards based on checklist completion in notes
+- Shows percentage and checked/total count
+- Updates in real-time when you edit notes
 
-The Board.md will show cards for all these notes, automatically tagged:
-- "Basics of Anatomy" #Anatomy
-- "Skeletal System" #Anatomy
-- "Basics of French" #French
-- etc.
+### 🔄 **Drag & Drop**
+- Move cards between columns with drag and drop
+- Right-click cards to move them via context menu
+- Card positions persist across sessions
 
-## Installation
+### ⚡ **Real-Time Sync**
+- Boards update automatically when files are modified
+- Watches for file creation, deletion, and renames
+- No manual refresh needed
 
-### For Testing
+### 📝 **Next Task Preview**
+- Shows the first unchecked item from each note's checklist
+- Helps you see at a glance what needs to be done next
 
-1. Build the plugin:
-   ```bash
-   npm install
-   npm run build
+### 🎯 **Modern UI**
+- Clean card design with tag badges
+- Responsive column layout
+- Dark mode compatible
+- Smooth drag animations
+
+## 🚀 Getting Started
+
+### Installation
+
+**Option 1: From Obsidian Community Plugins (Recommended)**
+1. Open Settings in Obsidian
+2. Go to Community Plugins and browse
+3. Search for "Folder Kanban"
+4. Click Install, then Enable
+
+**Option 2: Manual Installation**
+1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/yourusername/folder-kanban/releases)
+2. Create folder: `<vault>/.obsidian/plugins/folder-kanban/`
+3. Copy the downloaded files into that folder
+4. Reload Obsidian (Ctrl+R)
+5. Go to Settings → Community Plugins and enable "Folder Kanban"
+
+### Quick Start
+
+1. **Create a Board from a Folder**
+   - Right-click any folder in your vault
+   - Select "Create Kanban Board from Folder"
+   - A `Board.md` file is created and opens as a Kanban board
+   
+   Or manually create your structure:
+   ```
+   Projects/
+   ├── Board.md          # Your board file
+   ├── Frontend/         # Subfolder (creates "frontend" tag)
+   │   └── Task 1.md
+   ├── Backend/          # Subfolder (creates "backend" tag)
+   │   └── Task 2.md
+   └── Database/         # Subfolder (creates "database" tag)
+       └── Task 3.md
    ```
 
-2. Copy to your vault:
-   - Navigate to `[YourVault]/.obsidian/plugins/`
-   - Create a folder named `folder-kanban`
-   - Copy `main.js`, `manifest.json`, and `styles.css` to this folder
+2. **Configure Columns in Board.md**
+   ```markdown
+   ## Columns
+   Todo, In Progress, Done
+   ```
 
-3. Enable in Obsidian:
-   - Restart Obsidian (or Ctrl+R / Cmd+R)
-   - Go to Settings → Community plugins
-   - Enable "Folder Kanban"
+3. **Add Checklists to Your Notes** (optional)
+   ```markdown
+   # Task Title
+   
+   - [ ] First subtask
+   - [ ] Second subtask
+   - [x] Completed subtask
+   ```
 
-### For Development
+4. **Open the Kanban Board**
+   - Right-click on `Board.md`
+   - Select "Open as Kanban Board"
+   - Your board appears with all notes as cards!
 
-Run with auto-rebuild:
+5. **Customize** (optional)
+   - Click the "Customize" button on the board
+   - Edit column names
+   - Set custom tag colors for this board
+
+## 📝 Usage
+
+### How It Works
+
+1. **Board Detection**: Any folder containing a `Board.md` file can be opened as a Kanban board
+2. **Card Generation**: All markdown notes in subfolders become cards on the board
+3. **Tagging**: Cards are automatically tagged based on their subfolder name
+4. **Column Assignment**: Cards start in the first column and can be moved via drag-and-drop or context menu
+5. **Persistence**: Card positions are saved per-board and survive column renaming
+
+### Organizing Your Work
+
+The plugin works best when you organize notes into subfolders by category/type:
+- `Frontend/` - UI-related tasks
+- `Backend/` - Server-side tasks  
+- `Database/` - Data model tasks
+- `Design/` - Design tasks
+
+Each subfolder becomes a tag, and you can customize tag colors per-board.
+
+## ⚙️ Configuration
+
+### Customizing Columns
+
+Edit your `Board.md` file to define columns:
+
+```markdown
+## Columns
+Backlog, Todo, In Progress, Review, Done
+```
+
+Columns are comma-separated. The board will update automatically.
+
+### Customizing Tag Colors
+
+1. Open a board
+2. Click the "Customize" button
+3. Pick colors for each tag
+4. Colors are saved per-board
+
+### Settings
+
+Access plugin settings via Settings → Folder Kanban:
+- View and edit tag colors for the currently active board
+- Colors are organized per-board, not globally
+
+## 🎨 Card Details
+
+Each card shows:
+- **Title**: The note's filename
+- **Tag Badge**: Color-coded label based on the subfolder (top-right corner)
+- **Progress Bar**: Visual checklist completion indicator (if the note contains tasks)
+- **Progress Text**: Shows percentage and "X/Y checked" count
+- **Next Task**: The first unchecked item from the note's checklist
+
+## 🔧 Technical Details
+
+### Architecture
+- Built with TypeScript and Web Components
+- Uses Shadow DOM for card rendering
+- Efficient real-time file watching via Obsidian's Vault API
+
+### Data Storage
+- Card positions stored in plugin settings
+- Columns defined in `Board.md` file using markdown
+- Tag colors stored per-board path
+
+### Performance
+- Cards indexed by column position (not name) for stability
+- Automatic deduplication prevents duplicate cards
+- Minimal DOM updates on file changes
+
+## 🤝 Contributing
+
+Contributions welcome! Please feel free to submit a Pull Request.
+
+### Development Setup
 ```bash
+# Clone the repository
+git clone https://github.com/yourusername/folder-kanban.git
+
+# Install dependencies
+npm install
+
+# Build the plugin
+npm run build
+
+# For development with auto-rebuild
 npm run dev
 ```
 
-## Usage
+### Project Structure
+- `main.ts` - Core plugin logic and Kanban view
+- `components.ts` - Web Components (KanbanCard, KanbanProgress, etc.)
+- `styles.css` - UI styling
 
-1. **Create a Board**: Add a `Board.md` file in any folder
-2. **Add Content**: Create subfolders and add notes to them
-3. **Open Board**: Click on `Board.md` to see your kanban board
-4. **Organize**: Drag cards between columns to track progress
-5. **Refresh**: Use command palette → "Refresh Kanban Board" to update
+## 📄 License
 
-## Commands
+MIT License - feel free to use this plugin in your workflow!
 
-- **Refresh Kanban Board**: Manually refresh the current board to pick up new files
+## � Acknowledgments
 
-## Settings
+Built for the Obsidian community.
 
-- **Board file name**: Change the filename used for boards (default: `Board.md`)
+---
 
-## Use Cases
-
-### Learning Management
-```
-Learning/
-  Board.md
-  Anatomy/
-  French/
-  Geography/
-  History/
-  Maths/
-```
-
-### Entertainment Tracking
-```
-Entertainment/
-  Board.md
-  Books/
-  Movies/
-  Series/
-  Anime/
-```
-
-### Project Management
-```
-MyProjects/
-  Board.md
-  WebApp/
-  MobileApp/
-  Documentation/
-```
-
-## Tips
-
-- Cards automatically appear when you create new notes in subfolders
-- Use the right-click menu on cards for quick actions
-- The plugin remembers which column each card is in
-- Click "Refresh Kanban Board" if new files don't appear immediately
+**Enjoying Folder Kanban?** Consider giving it a ⭐ on GitHub!

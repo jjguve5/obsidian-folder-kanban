@@ -1,10 +1,10 @@
 {
-  "id": "folder-kanban",
-  "name": "Folder Kanban",
-  "version": "1.0.0",
-  "minAppVersion": "0.15.0",
-  "description": "Automatically creates kanban boards from folder structures with auto-tagged cards",
-  "author": "Your Name",
-  "authorUrl": "",
-  "isDesktopOnly": false
+	"id": "folder-kanban",
+	"name": "Folder Kanban",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "Transform folders into Kanban boards with customizable columns and per-board tag colors",
+	"author": "Your Name",
+	"authorUrl": "https://github.com/yourusername/obsidian-folder-kanban",
+	"isDesktopOnly": false
 }

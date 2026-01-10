@@ -24,7 +24,9 @@ interface FolderKanbanSettings {
 		[key: string]: string[];  // folder name pattern -> columns
 	};
 	tagColors: {
-		[key: string]: string;    // tag name -> hex color
+		[boardPath: string]: {    // board file path -> tag colors
+			[tag: string]: string; // tag name -> hex color
+		};
 	};
 }
 
@@ -36,16 +38,14 @@ const DEFAULT_SETTINGS: FolderKanbanSettings = {
 		'entertainment': ['Want To Watch', 'Watching', 'Done'],
 		'game': ['To Do', 'In Progress', 'Done']
 	},
-	tagColors: {
-		'default': '#3b82f6'
-	}
+	tagColors: {}
 }
 
 interface CardData {
 	filePath: string;
 	title: string;
 	tag: string;
-	column: string;
+	columnIndex: number;
 }
 
 interface BoardState {
@@ -251,8 +251,6 @@ export default class FolderKanbanPlugin extends Plugin {
 		}));
 
 		this.addSettingTab(new FolderKanbanSettingTab(this.app, this));
-
-		console.log('Folder Kanban Plugin loaded!');
 	}
 
 	async openKanbanBoardInPlace(file: TFile) {
@@ -388,6 +386,7 @@ export default class FolderKanbanPlugin extends Plugin {
 class FolderKanbanView extends ItemView {
 	plugin: FolderKanbanPlugin;
 	boardFile: TFile | null = null;
+	boardContent: string = '';
 	folderPath: string = '';
 	columns: string[] = ['To Do', 'In Progress', 'Done'];
 	cards: CardData[] = [];
@@ -410,18 +409,15 @@ class FolderKanbanView extends ItemView {
 	}
 
 	async onOpen() {
-		console.log('FolderKanbanView onOpen called');
 		await this.refresh();
 	}
 
 	async setState(state: any, result: any): Promise<void> {
-		console.log('FolderKanbanView setState called with state:', state);
 		if (state.file) {
 			const file = this.app.vault.getAbstractFileByPath(state.file);
 			if (file instanceof TFile) {
 				this.boardFile = file;
 				this.folderPath = file.parent?.path || '';
-				console.log('Set boardFile to:', this.boardFile.path);
 				await this.refresh();
 			}
 		}
@@ -434,10 +430,12 @@ class FolderKanbanView extends ItemView {
 	}
 
 	async refresh() {
-		console.log('FolderKanbanView refresh called, boardFile:', this.boardFile?.path);
 		if (!this.boardFile) return;
 
-		// Determine columns based on folder name or use defaults
+		// Load board file content
+		this.boardContent = await this.app.vault.read(this.boardFile);
+
+		// Determine columns based on board file content
 		this.detectColumns();
 
 		// Scan folder structure and build cards
@@ -455,19 +453,29 @@ class FolderKanbanView extends ItemView {
 	}
 
 	detectColumns() {
-		// Detect column names based on folder context
-		const folderName = this.boardFile?.parent?.name.toLowerCase() || '';
-		
-		// Check custom column settings
-		for (const [pattern, cols] of Object.entries(this.plugin.settings.customColumns)) {
-			if (folderName.includes(pattern)) {
-				this.columns = cols;
-				return;
-			}
+		// Read columns from Board.md content
+		if (!this.boardFile) {
+			this.columns = ['To Do', 'In Progress', 'Done'];
+			return;
 		}
-		
+
 		// Default columns
 		this.columns = ['To Do', 'In Progress', 'Done'];
+
+		// Try to find "## Columns" section in board file
+		const boardContent = this.boardContent || '';
+		const columnMatch = boardContent.match(/##\s+Columns\s*\n([^\n]*)/i);
+		
+		if (columnMatch && columnMatch[1]) {
+			// Parse columns from format: "Column1, Column2, Column3"
+			const columnLine = columnMatch[1].trim();
+			if (columnLine) {
+				const cols = columnLine.split(',').map(c => c.trim()).filter(c => c);
+				if (cols.length > 0) {
+					this.columns = cols;
+				}
+			}
+		}
 	}
 
 	async scanFolderForCards() {
@@ -494,7 +502,7 @@ class FolderKanbanView extends ItemView {
 		const existingCards = new Map(this.cards.map(c => [c.filePath.toLowerCase(), c]));
 		this.cards = dedupedCards.map(card => {
 			const existing = existingCards.get(card.filePath.toLowerCase());
-			return existing || { ...card, column: this.columns[0] };
+			return existing || { ...card, columnIndex: 0 };
 		});
 
 		// Final guard against any residual duplicates
@@ -511,7 +519,7 @@ class FolderKanbanView extends ItemView {
 					filePath: child.path,
 					title: child.basename,
 					tag: tag,
-					column: this.columns[0] // Default to first column
+					columnIndex: 0 // Default to first column
 				});
 			} else if (child instanceof TFolder) {
 				// Recursively collect from subfolders
@@ -525,8 +533,8 @@ class FolderKanbanView extends ItemView {
 
 		this.cards = this.cards.map(card => {
 			const saved = savedCards.get(card.filePath.toLowerCase());
-			if (saved && this.columns.includes(saved.column)) {
-				return { ...card, column: saved.column };
+			if (saved && saved.columnIndex >= 0 && saved.columnIndex < this.columns.length) {
+				return { ...card, columnIndex: saved.columnIndex };
 			}
 			return card;
 		});
@@ -557,7 +565,7 @@ class FolderKanbanView extends ItemView {
 
 		const editBtn = headerEl.createEl('button', { text: 'Customize', cls: 'kanban-edit-btn' });
 		editBtn.addEventListener('click', () => {
-			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.cards, () => {
+			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => {
 				this.refresh();
 			}).open();
 		});
@@ -567,14 +575,14 @@ class FolderKanbanView extends ItemView {
 		const boardEl = container.createDiv({ cls: 'kanban-board' });
 
 		// Create columns
-		this.columns.forEach(columnName => {
+		this.columns.forEach((columnName, columnIndex) => {
 			const columnEl = boardEl.createDiv({ cls: 'kanban-column' });
 			
 			// Column header
 			const headerEl = columnEl.createDiv({ cls: 'kanban-column-header' });
 			headerEl.createSpan({ text: columnName, cls: 'kanban-column-title' });
 			
-			const cardsInColumn = this.cards.filter(c => c.column === columnName);
+			const cardsInColumn = this.cards.filter(c => c.columnIndex === columnIndex);
 			headerEl.createSpan({ 
 				text: ` (${cardsInColumn.length})`, 
 				cls: 'kanban-column-count' 
@@ -584,7 +592,7 @@ class FolderKanbanView extends ItemView {
 			const contentEl = columnEl.createDiv({ cls: 'kanban-column-content' });
 			
 			// Add drag-drop support
-			this.setupDropZone(contentEl, columnName);
+			this.setupDropZone(contentEl, columnIndex);
 
 
 			// Render cards (display-level dedupe per column)
@@ -612,8 +620,9 @@ class FolderKanbanView extends ItemView {
 	}
 
 	renderCard(container: HTMLElement, card: CardData) {
-		// Get tag color from settings
-		const tagColor = this.plugin.settings.tagColors[card.tag] || this.plugin.settings.tagColors['default'] || '#3b82f6';
+		// Get tag color from settings (board-specific)
+		const boardColors = this.plugin.settings.tagColors[this.boardFile?.path || ''] || {};
+		const tagColor = boardColors[card.tag] || boardColors['default'] || '#3b82f6';
 
 		// Create custom kanban-card element
 		const cardEl = document.createElement('kanban-card') as any;
@@ -713,13 +722,13 @@ class FolderKanbanView extends ItemView {
 					});
 			});
 
-			this.columns.forEach(col => {
-				if (col !== card.column) {
+			this.columns.forEach((col, index) => {
+				if (index !== card.columnIndex) {
 					menu.addItem((item) => {
 						item.setTitle(`Move to ${col}`)
 							.setIcon('arrow-right')
 							.onClick(() => {
-								this.moveCard(card.filePath, col);
+								this.moveCard(card.filePath, index);
 							});
 					});
 				}
@@ -729,7 +738,7 @@ class FolderKanbanView extends ItemView {
 		});
 	}
 
-	setupDropZone(element: HTMLElement, columnName: string) {
+	setupDropZone(element: HTMLElement, columnIndex: number) {
 		element.addEventListener('dragover', (e) => {
 			e.preventDefault();
 			element.addClass('drag-over');
@@ -745,15 +754,15 @@ class FolderKanbanView extends ItemView {
 			
 			const filePath = e.dataTransfer?.getData('text/plain');
 			if (filePath) {
-				await this.moveCard(filePath, columnName);
+				await this.moveCard(filePath, columnIndex);
 			}
 		});
 	}
 
-	async moveCard(filePath: string, targetColumn: string) {
+	async moveCard(filePath: string, targetColumnIndex: number) {
 		const card = this.cards.find(c => c.filePath === filePath);
 		if (card) {
-			card.column = targetColumn;
+			card.columnIndex = targetColumnIndex;
 			await this.saveState();
 			this.render();
 		}
@@ -865,146 +874,163 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 
 		// Tag colors section
 		containerEl.createEl('h3', {text: 'Tag Color Customization'});
-		containerEl.createEl('p', {
-			text: 'Set custom colors for tag categories. Use hex colors (e.g., #3b82f6)',
-			cls: 'setting-item-description'
-		});
+		
+		// Get active board
+		const activeLeaf = this.app.workspace.getActiveViewOfType(FolderKanbanView);
+		const activeBoardPath = activeLeaf?.boardFile?.path;
+		
+		if (activeBoardPath) {
+			containerEl.createEl('p', {
+				text: `Setting colors for board: ${activeBoardPath}`,
+				cls: 'setting-item-description'
+			});
+			
+			// Initialize board colors if not exists
+			if (!this.plugin.settings.tagColors[activeBoardPath]) {
+				this.plugin.settings.tagColors[activeBoardPath] = {
+					'frontend': '#06b6d4',
+					'backend': '#8b5cf6',
+					'database': '#f59e0b',
+					'design': '#ec4899',
+					'default': '#3b82f6'
+				};
+			}
+			
+			const boardColors = this.plugin.settings.tagColors[activeBoardPath];
 
-		Object.entries(this.plugin.settings.tagColors).forEach(([tag, color]) => {
+			Object.entries(boardColors).forEach(([tag, color]) => {
+				new Setting(containerEl)
+					.setName(`Color for "${tag}" tag`)
+					.addText(text => text
+						.setPlaceholder('#3b82f6')
+						.setValue(color)
+						.onChange(async (value) => {
+							// Validate hex color
+							if (/^#[0-9A-F]{6}$/i.test(value)) {
+								this.plugin.settings.tagColors[activeBoardPath][tag] = value;
+								await this.plugin.saveSettings();
+							}
+						}))
+					.addButton(btn => {
+						if (tag !== 'default') {
+							btn.setButtonText('Remove')
+								.onClick(async () => {
+									delete this.plugin.settings.tagColors[activeBoardPath][tag];
+									await this.plugin.saveSettings();
+									this.display();
+								});
+						}
+					});
+			});
+
+			// Add new tag color
 			new Setting(containerEl)
-				.setName(`Color for "${tag}" tag`)
+				.setName('Add custom tag color')
+				.addText(text => text
+					.setPlaceholder('Tag name')
+					.onChange(value => text.inputEl.dataset.tag = value))
 				.addText(text => text
 					.setPlaceholder('#3b82f6')
-					.setValue(color)
-					.onChange(async (value) => {
-						// Validate hex color
-						if (/^#[0-9A-F]{6}$/i.test(value)) {
-							this.plugin.settings.tagColors[tag] = value;
+					.onChange(value => text.inputEl.dataset.color = value))
+				.addButton(btn => btn
+					.setButtonText('Add')
+					.onClick(async () => {
+						const inputs = containerEl.querySelectorAll('.setting-item:last-of-type input');
+						const tagInput = inputs[0] as HTMLInputElement;
+						const colorInput = inputs[1] as HTMLInputElement;
+						
+						const tag = tagInput?.value?.trim();
+						const color = colorInput?.value?.trim();
+
+						if (tag && /^#[0-9A-F]{6}$/i.test(color)) {
+							this.plugin.settings.tagColors[activeBoardPath][tag] = color;
 							await this.plugin.saveSettings();
+							tagInput.value = '';
+							colorInput.value = '';
+							this.display();
 						}
 					}));
-
-			if (tag !== 'default') {
-				new Setting(containerEl)
-					.addButton(btn => btn
-						.setButtonText('Remove')
-						.onClick(async () => {
-							delete this.plugin.settings.tagColors[tag];
-							await this.plugin.saveSettings();
-							this.display();
-						}));
-			}
-		});
-
-		// Add new tag color
-		new Setting(containerEl)
-			.setName('Add custom tag color')
-			.addText(text => text
-				.setPlaceholder('e.g., "Anatomy"')
-				.onChange(value => text.inputEl.dataset.tag = value))
-			.addText(text => text
-				.setPlaceholder('e.g., #e74c3c')
-				.onChange(value => text.inputEl.dataset.color = value))
-			.addButton(btn => btn
-				.setButtonText('Add')
-				.onClick(async () => {
-					const tagInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"Anatomy\\""]')[0] as HTMLInputElement;
-					const colorInput = containerEl.querySelectorAll('input[placeholder="e.g., #e74c3c"]')[0] as HTMLInputElement;
-					
-					const tag = tagInput?.value?.trim();
-					const color = colorInput?.value?.trim();
-
-					if (tag && /^#[0-9A-F]{6}$/i.test(color)) {
-						this.plugin.settings.tagColors[tag] = color;
-						await this.plugin.saveSettings();
-						tagInput.value = '';
-						colorInput.value = '';
-						this.display();
-					}
-				}));
+		} else {
+			containerEl.createEl('p', {
+				text: 'Open a Kanban board to customize tag colors for that board.',
+				cls: 'setting-item-description'
+			});
+		}
 	}
 }
 
 class BoardCustomizeModal extends Modal {
 	plugin: FolderKanbanPlugin;
 	folderName: string;
+	boardPath: string;
+	boardFile: TFile | null;
 	cards: CardData[];
 	onSave: () => void;
-	tempCustomColumns: {[key: string]: string[]};
+	tempColumns: string[];
 	tempTagColors: {[key: string]: string};
+	boardContent: string = '';
 
-	constructor(app: App, plugin: FolderKanbanPlugin, folderName: string, cards: CardData[], onSave: () => void) {
+	constructor(app: App, plugin: FolderKanbanPlugin, folderName: string, boardPath: string, boardFile: TFile | null, cards: CardData[], onSave: () => void) {
 		super(app);
 		this.plugin = plugin;
 		this.folderName = folderName;
+		this.boardPath = boardPath;
+		this.boardFile = boardFile;
 		this.cards = cards;
 		this.onSave = onSave;
-		this.tempCustomColumns = JSON.parse(JSON.stringify(plugin.settings.customColumns));
-		this.tempTagColors = JSON.parse(JSON.stringify(plugin.settings.tagColors));
+		
+		// Initialize columns from board file (will be populated in onOpen)
+		this.tempColumns = ['To Do', 'In Progress', 'Done'];
+		
+		// Get board-specific colors or initialize with defaults
+		if (!plugin.settings.tagColors[boardPath]) {
+			plugin.settings.tagColors[boardPath] = {
+				'frontend': '#06b6d4',
+				'backend': '#8b5cf6',
+				'database': '#f59e0b',
+				'design': '#ec4899',
+				'default': '#3b82f6'
+			};
+		}
+		this.tempTagColors = JSON.parse(JSON.stringify(plugin.settings.tagColors[boardPath]));
 	}
 
-	onOpen() {
+	async onOpen() {
 		const {contentEl} = this;
 		contentEl.empty();
 		contentEl.createEl('h2', { text: `Customize ${this.folderName} Board` });
+
+		// Load board content to get current columns
+		if (this.boardFile) {
+			this.boardContent = await this.app.vault.read(this.boardFile);
+			const columnMatch = this.boardContent.match(/##\s+Columns\s*\n([^\n]*)/i);
+			if (columnMatch) {
+				const columnLine = columnMatch[1].trim();
+				const cols = columnLine.split(',').map(c => c.trim()).filter(c => c);
+				if (cols.length > 0) {
+					this.tempColumns = cols;
+				}
+			}
+		}
 
 		// Columns section
 		contentEl.createEl('h3', { text: 'Columns' });
 		
 		const columnsContainer = contentEl.createDiv({ cls: 'customize-section' });
 		
-		// Show current columns for this folder
-		let folderPattern = '';
-		for (const [pattern, cols] of Object.entries(this.tempCustomColumns)) {
-			if (this.folderName.toLowerCase().includes(pattern)) {
-				folderPattern = pattern;
-				break;
-			}
-		}
+		const colsSetting = new Setting(columnsContainer)
+			.setName('Board Columns')
+		.setDesc('Separate columns with commas');
 
-		if (folderPattern) {
-			const colsSetting = new Setting(columnsContainer)
-				.setName(`Columns for "${folderPattern}"`)
-				.setDesc('Separate columns with commas');
-
-			colsSetting.addText(text => text
-				.setPlaceholder('To Do, In Progress, Done')
-				.setValue(this.tempCustomColumns[folderPattern].join(', '))
-				.onChange(value => {
-					const newCols = value.split(',').map(c => c.trim()).filter(c => c);
-					if (newCols.length > 0) {
-						this.tempCustomColumns[folderPattern] = newCols;
-					}
-				}));
-		} else {
-			// Option to create new pattern
-			const newSetting = new Setting(columnsContainer)
-				.setName('Create custom columns for this folder')
-				.setDesc('Pattern name (e.g., "learn", "entertainment")');
-
-			let patternValue = '';
-			let columnsValue = '';
-
-			newSetting.addText(text => text
-				.setPlaceholder('e.g., learn')
-				.onChange(value => patternValue = value));
-
-			newSetting.addText(text => text
-				.setPlaceholder('To Do, In Progress, Done')
-				.onChange(value => columnsValue = value));
-
-			newSetting.addButton(btn => btn
-				.setButtonText('Add')
-				.onClick(() => {
-					if (patternValue && columnsValue) {
-						const cols = columnsValue.split(',').map(c => c.trim()).filter(c => c);
-						if (cols.length > 0) {
-							this.tempCustomColumns[patternValue] = cols;
-							this.onOpen(); // Refresh modal
-						}
-					}
-				}));
-		}
+		colsSetting.addText(text => text
+			.setPlaceholder('To Do, In Progress, Done')
+			.setValue(this.tempColumns.join(', '))
+			.onChange(value => {
+				const newCols = value.split(',').map(c => c.trim()).filter(c => c);
+				if (newCols.length > 0) {
+					this.tempColumns = newCols;
+				}
+			}));
 
 		// Tag colors section
 		contentEl.createEl('h3', { text: 'Tag Colors' });
@@ -1097,11 +1123,40 @@ class BoardCustomizeModal extends Modal {
 		
 		const saveBtn = btnContainer.createEl('button', { text: 'Save', cls: 'modal-save-btn' });
 		saveBtn.addEventListener('click', async () => {
-			this.plugin.settings.customColumns = this.tempCustomColumns;
-			this.plugin.settings.tagColors = this.tempTagColors;
+			// Save columns to Board.md if it exists
+			if (this.boardFile) {
+				let boardContent = this.boardContent;
+				const columnLine = this.tempColumns.join(', ');
+				
+				// Check if ## Columns section exists
+				if (boardContent.includes('## Columns')) {
+					// Replace existing columns section - match from ## Columns to end of line
+					boardContent = boardContent.replace(
+						/##\s+Columns\s*\n[^\n]*/m,
+						`## Columns\n${columnLine}`
+					);
+				} else {
+					// Add new columns section at the beginning
+					boardContent = `## Columns\n${columnLine}\n\n${boardContent}`;
+				}
+				
+				// Write the modified content back to the file
+				await this.app.vault.modify(this.boardFile, boardContent);
+				
+				// Wait a moment to ensure file is written
+				await new Promise(resolve => setTimeout(resolve, 100));
+			}
+			
+			// Save tag colors
+			this.plugin.settings.tagColors[this.boardPath] = this.tempTagColors;
 			await this.plugin.saveSettings();
 			new Notice('Board settings saved!');
-			this.onSave();
+			
+			// Refresh the board to show new columns
+			if (this.onSave) {
+				this.onSave();
+			}
+			
 			this.close();
 		});
 

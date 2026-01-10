@@ -122,6 +122,57 @@ export default class FolderKanbanPlugin extends Plugin {
 			})
 		);
 
+		// Real-time updates: When any file is deleted, refresh board views
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				if (file instanceof TFile) {
+					// Refresh all kanban views that might be affected by this file
+					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+					for (const leaf of leaves) {
+						const view = leaf.view as any;
+						if (view?.folderPath && file.path.startsWith(view.folderPath)) {
+							// File was deleted from the folder being displayed, refresh the board
+							view.refresh();
+						}
+					}
+				}
+			})
+		);
+
+		// Real-time updates: When any file is created, refresh board views
+		this.registerEvent(
+			this.app.vault.on('create', (file) => {
+				if (file instanceof TFile) {
+					// Refresh all kanban views that might be affected by this file
+					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+					for (const leaf of leaves) {
+						const view = leaf.view as any;
+						if (view?.folderPath && file.path.startsWith(view.folderPath)) {
+							// File was created in the folder being displayed, refresh the board
+							view.refresh();
+						}
+					}
+				}
+			})
+		);
+
+		// Real-time updates: When any file is renamed, refresh board views
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				if (file instanceof TFile) {
+					// Refresh all kanban views that might be affected by this file
+					const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+					for (const leaf of leaves) {
+						const view = leaf.view as any;
+						// Check both old and new paths
+						if (view?.folderPath && (file.path.startsWith(view.folderPath) || oldPath.startsWith(view.folderPath))) {
+							view.refresh();
+						}
+					}
+				}
+			})
+		);
+
 		// Add context menu option for folders
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {

@@ -230,7 +230,7 @@ export default class FolderKanbanPlugin extends Plugin {
 		// Ensure a persistent right-side checklist tab exists and stays synced to active note
 		const ensureChecklistLeaf = () => {
 			// Ensure a single checklist leaf exists in the right sidebar
-			let leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHECKLIST);
+			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHECKLIST);
 			let rightLeaf: WorkspaceLeaf | null = null;
 
 			if (leaves.length > 0) {
@@ -444,8 +444,8 @@ export default class FolderKanbanPlugin extends Plugin {
 class FolderKanbanView extends ItemView {
 	plugin: FolderKanbanPlugin;
 	boardFile: TFile | null = null;
-	boardContent: string = '';
-	folderPath: string = '';
+	boardContent = '';
+	folderPath = '';
 	columns: string[] = ['To Do', 'In Progress', 'Done'];
 	cards: CardData[] = [];
 
@@ -622,7 +622,9 @@ class FolderKanbanView extends ItemView {
 
 		const editBtn = headerEl.createEl('button', { text: 'Customize', cls: 'kanban-edit-btn' });
 		editBtn.addEventListener('click', () => {
-			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => { void this.refresh(); }).open();
+			if (this.boardFile?.parent) {
+				new BoardCustomizeModal(this.app, this.plugin, this.boardFile.parent.name, this.boardFile.path, this.boardFile, this.cards, () => { void this.refresh(); }).open();
+			}
 		});
 
 		// Create 
@@ -904,8 +906,8 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 					if (columnsList.length > 0) {
 						this.plugin.settings.customColumns[pattern] = columnsList;
 						await this.plugin.saveSettings();
-						patternInputEl!.value = '';
-						columnsInputEl!.value = '';
+						if (patternInputEl) patternInputEl.value = '';
+						if (columnsInputEl) columnsInputEl.value = '';
 						void this.display();
 					}
 				}
@@ -983,8 +985,8 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 						if (tag && color && /^#[0-9A-F]{6}$/i.test(color)) {
 							this.plugin.settings.tagColors[activeBoardPath][tag] = color;
 							await this.plugin.saveSettings();
-							tagInputEl!.value = '';
-							colorInputEl!.value = '';
+							if (tagInputEl) tagInputEl.value = '';
+							if (colorInputEl) colorInputEl.value = '';
 							void this.display();
 						}
 					}));
@@ -1006,7 +1008,7 @@ class BoardCustomizeModal extends Modal {
 	onSave: () => void;
 	tempColumns: string[];
 	tempTagColors: {[key: string]: string};
-	boardContent: string = '';
+	boardContent = '';
 
 	constructor(app: App, plugin: FolderKanbanPlugin, folderName: string, boardPath: string, boardFile: TFile | null, cards: CardData[], onSave: () => void) {
 		super(app);
@@ -1057,7 +1059,7 @@ class BoardCustomizeModal extends Modal {
 		const columnsContainer = contentEl.createDiv({ cls: 'customize-section' });
 		
 		const colsSetting = new Setting(columnsContainer)
-			.setName('Board Columns')
+			.setName('Board columns')
 		.setDesc('Separate columns with commas');
 
 		colsSetting.addText(text => text
@@ -1149,12 +1151,12 @@ class BoardCustomizeModal extends Modal {
 	saveBtn.addEventListener('click', async () => {
 		// Save columns to Board.md if it exists
 		if (this.boardFile) {
-			let boardContent = this.boardContent;
-			const columnLine = this.tempColumns.join(', ');
+			const boardContent = this.boardContent;
 			
 			// Check if ## Columns section exists
 			if (boardContent.includes('## Columns')) {
-				}
+				// Empty block - columns section exists but no action needed
+			}
 				
 				// Write the modified content back to the file
 				await this.app.vault.modify(this.boardFile, boardContent);
@@ -1190,7 +1192,7 @@ class ChecklistView extends ItemView {
 	plugin: FolderKanbanPlugin;
 	file: TFile | null = null;
 	items: { text: string; checked: boolean }[] = [];
-	focusNewInputNext: boolean = false;
+	focusNewInputNext = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: FolderKanbanPlugin) {
 		super(leaf);
@@ -1319,6 +1321,7 @@ class ChecklistView extends ItemView {
 		await this.refresh();
 	}
 }
+
 
 
 

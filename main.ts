@@ -28,6 +28,11 @@ interface FolderKanbanSettings {
 			[tag: string]: string; // tag name -> hex color
 		};
 	};
+	checklists: {
+		[filePath: string]: {
+			items: { text: string; checked: boolean }[];
+		};
+	};
 }
 
 const DEFAULT_SETTINGS: FolderKanbanSettings = {
@@ -38,7 +43,8 @@ const DEFAULT_SETTINGS: FolderKanbanSettings = {
 		'entertainment': ['Want To Watch', 'Watching', 'Done'],
 		'game': ['To Do', 'In Progress', 'Done']
 	},
-	tagColors: {}
+	tagColors: {},
+	checklists: {}
 }
 
 interface CardData {
@@ -68,6 +74,16 @@ const VIEW_TYPE_CHECKLIST = 'checklist-view';
 export default class FolderKanbanPlugin extends Plugin {
 	settings: FolderKanbanSettings;
 	boardStates: Map<string, BoardState> = new Map();
+
+	refreshAllKanbanViews() {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+		leaves.forEach(leaf => {
+			const view = leaf.view as any;
+			if (view && typeof view.refresh === 'function') {
+				view.refresh();
+			}
+		});
+	}
 
 	async onload() {
 		await this.loadSettings();
@@ -370,6 +386,42 @@ export default class FolderKanbanPlugin extends Plugin {
 		});
 	}
 
+	private parseChecklistFromContent(content: string): { text: string; checked: boolean }[] {
+		const items: { text: string; checked: boolean }[] = [];
+		content.split('\n').forEach(line => {
+			const match = line.match(/^\s*[-*]\s+\[([x ])\]\s+(.+)$/i);
+			if (match) {
+				items.push({ text: match[2], checked: match[1].toLowerCase() === 'x' });
+			}
+		});
+		return items;
+	}
+
+	async getChecklist(filePath: string): Promise<{ text: string; checked: boolean }[]> {
+		const existing = this.settings.checklists[filePath]?.items;
+		if (existing) return existing;
+
+		// If not stored yet, try to import from the note once
+		const file = this.app.vault.getAbstractFileByPath(filePath);
+		if (file instanceof TFile) {
+			try {
+				const content = await this.app.vault.read(file);
+				const parsed = this.parseChecklistFromContent(content);
+				this.settings.checklists[filePath] = { items: parsed };
+				await this.saveSettings();
+				return parsed;
+			} catch (e) {
+				return [];
+			}
+		}
+		return [];
+	}
+
+	async setChecklist(filePath: string, items: { text: string; checked: boolean }[]) {
+		this.settings.checklists[filePath] = { items };
+		await this.saveSettings();
+	}
+
 	async saveBoardState(boardPath: string, state: BoardState) {
 		const deduped = { cards: Array.from(new Map(state.cards.map(c => [c.filePath, c])).values()) };
 		this.boardStates.set(boardPath, deduped);
@@ -644,46 +696,29 @@ class FolderKanbanView extends ItemView {
 		// Append to DOM FIRST to trigger connectedCallback and initialize progress component
 		container.appendChild(cardEl);
 
-		// Fetch checklist info and update card
-		const fileForProgress = this.app.vault.getAbstractFileByPath(card.filePath);
-		if (fileForProgress instanceof TFile) {
-			this.app.vault.read(fileForProgress).then((content) => {
-				const lines = content.split('\n');
-				let total = 0, checked = 0;
-				let nextTask = '';
-				for (const line of lines) {
-					const m = line.match(/^\s*[-*]\s+\[([x ])\]\s+(.+)$/i);
-					if (m) {
-						total++;
-						const isChecked = m[1].toLowerCase() === 'x';
-						if (isChecked) {
-							checked++;
-						} 
-						// For next task, check if unchecked (not 'x')
-						if (!isChecked && !nextTask) {
-							nextTask = m[2].trim();
-						}
+		// Fetch checklist info from stored data and update card
+		this.plugin.getChecklist(card.filePath).then((items) => {
+			const total = items.length;
+			const checked = items.filter(i => i.checked).length;
+			const nextTaskItem = items.find(i => !i.checked);
+			const nextTask = nextTaskItem ? nextTaskItem.text : '';
+
+			cardEl.setAttribute('checked', checked.toString());
+			cardEl.setAttribute('total', total.toString());
+
+			const shadowRoot = cardEl.shadowRoot;
+			if (shadowRoot) {
+				const nextTaskEl = shadowRoot.querySelector('.next-task') as HTMLElement;
+				if (nextTaskEl) {
+					if (nextTask) {
+						nextTaskEl.textContent = nextTask;
+						nextTaskEl.style.display = 'block';
+					} else {
+						nextTaskEl.style.display = 'none';
 					}
 				}
-				// Always update checked/total
-				cardEl.setAttribute('checked', checked.toString());
-				cardEl.setAttribute('total', total.toString());
-				
-				// Directly update the next task element in the shadow DOM
-				const shadowRoot = cardEl.shadowRoot;
-				if (shadowRoot) {
-					const nextTaskEl = shadowRoot.querySelector('.next-task') as HTMLElement;
-					if (nextTaskEl) {
-						if (nextTask) {
-							nextTaskEl.textContent = nextTask;
-							nextTaskEl.style.display = 'block';
-						} else {
-							nextTaskEl.style.display = 'none';
-						}
-					}
-				}
-			}).catch(() => {});
-		}
+			}
+		}).catch(() => {});
 
 		// Drag events - handle on element itself
 		cardEl.addEventListener('dragstart', (e: DragEvent) => {
@@ -1173,7 +1208,7 @@ class BoardCustomizeModal extends Modal {
 class ChecklistView extends ItemView {
 	plugin: FolderKanbanPlugin;
 	file: TFile | null = null;
-	items: { text: string; checked: boolean; lineIndex: number }[] = [];
+	items: { text: string; checked: boolean }[] = [];
 	focusNewInputNext: boolean = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: FolderKanbanPlugin) {
@@ -1207,8 +1242,7 @@ class ChecklistView extends ItemView {
 
 		const list = container.createDiv({ cls: 'checklist-container' });
 		if (this.file) {
-			const content = await this.app.vault.read(this.file);
-			this.parseChecklist(content);
+			this.items = await this.plugin.getChecklist(this.file.path);
 			this.items.forEach((it, index) => {
 				const item = document.createElement('checklist-item') as any;
 				item.setAttribute('text', it.text);
@@ -1276,47 +1310,33 @@ class ChecklistView extends ItemView {
 		}
 	}
 
-	parseChecklist(content: string) {
-		const lines = content.split('\n');
-		this.items = [];
-		for (let i = 0; i < lines.length; i++) {
-			const line = lines[i];
-			const match = line.match(/^\s*[-*]\s+\[([x ])\]\s+(.+)$/i);
-			if (match) this.items.push({ text: match[2], checked: match[1].toLowerCase() === 'x', lineIndex: i });
-		}
-	}
-
 	async addItem(text: string, checked: boolean) {
 		if (!this.file) return;
-		const content = await this.app.vault.read(this.file);
-		const mark = checked ? 'x' : ' ';
-		const newContent = content.endsWith('\n') ? `${content}- [${mark}] ${text}\n` : `${content}\n- [${mark}] ${text}\n`;
-		await this.app.vault.modify(this.file, newContent);
+		const items = await this.plugin.getChecklist(this.file.path);
+		items.push({ text, checked });
+		await this.plugin.setChecklist(this.file.path, items);
 		this.focusNewInputNext = true;
+		this.plugin.refreshAllKanbanViews();
 		await this.refresh();
 	}
 
 	async toggleItem(index: number, checked: boolean) {
 		if (!this.file) return;
-		const content = await this.app.vault.read(this.file);
-		const lines = content.split('\n');
-		const item = this.items[index];
-		const line = lines[item.lineIndex];
-		const newLine = line.replace(/\[([x ])\]/i, checked ? '[x]' : '[ ]');
-		lines[item.lineIndex] = newLine;
-		const newContent = lines.join('\n');
-		await this.app.vault.modify(this.file, newContent);
-		await this.refresh();
+		const items = await this.plugin.getChecklist(this.file.path);
+		if (items[index]) {
+			items[index].checked = checked;
+			await this.plugin.setChecklist(this.file.path, items);
+			this.plugin.refreshAllKanbanViews();
+			await this.refresh();
+		}
 	}
 
 	async removeItem(index: number) {
 		if (!this.file) return;
-		const content = await this.app.vault.read(this.file);
-		const lines = content.split('\n');
-		const item = this.items[index];
-		lines.splice(item.lineIndex, 1);
-		const newContent = lines.join('\n');
-		await this.app.vault.modify(this.file, newContent);
+		const items = await this.plugin.getChecklist(this.file.path);
+		items.splice(index, 1);
+		await this.plugin.setChecklist(this.file.path, items);
+		this.plugin.refreshAllKanbanViews();
 		await this.refresh();
 	}
 }

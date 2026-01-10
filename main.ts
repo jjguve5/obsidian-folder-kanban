@@ -11,11 +11,10 @@ import {
 	Notice,
 	Modal,
 	MarkdownView,
-	setIcon,
 	ViewStateResult
 } from 'obsidian';
 import './components';
-import { KanbanCard, KanbanProgress, ChecklistItem, TagColorEditItem } from './components';
+import { KanbanCard, ChecklistItem, TagColorEditItem } from './components';
 
 interface FolderKanbanSettings {
 	boardFileName: string;
@@ -78,11 +77,6 @@ interface IFolderKanbanView extends ItemView {
 	refresh(): Promise<void>;
 	folderPath?: string;
 	boardFile?: TFile;
-}
-
-interface IChecklistView extends ItemView {
-	filePath?: string;
-	updateChecklistDisplay(): void;
 }
 
 export default class FolderKanbanPlugin extends Plugin {
@@ -369,9 +363,7 @@ export default class FolderKanbanPlugin extends Plugin {
 		await this.openKanbanBoard(boardFile);
 	}
 
-	onunload() {
-		this.app.workspace.detachLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
-	}
+	onunload() {	}
 
 	async loadSettings() {
 		const data = await this.loadData();
@@ -475,7 +467,7 @@ class FolderKanbanView extends ItemView {
 	}
 
 	async onOpen() {
-		await void this.refresh();
+		await this.refresh();
 	}
 
 	async setState(state: Record<string, unknown>, result: ViewStateResult): Promise<void> {
@@ -484,7 +476,7 @@ class FolderKanbanView extends ItemView {
 			if (file instanceof TFile) {
 				this.boardFile = file;
 				this.folderPath = file.parent?.path || '';
-				await void this.refresh();
+				await this.refresh();
 			}
 		}
 	}
@@ -552,13 +544,13 @@ class FolderKanbanView extends ItemView {
 
 		// Get all subfolders
 		const subfolders = parentFolder.children.filter(
-			child => child instanceof TFolder && child.name !== '.obsidian'
-		) as TFolder[];
+			child => child instanceof TFolder && child.name !== this.app.vault.configDir.split('/').pop()
+		);
 
 		// For each subfolder, get all markdown files
 		for (const subfolder of subfolders) {
-			const tag = subfolder.name;
-			await this.collectNotesFromFolder(subfolder, tag, newCards);
+			const tag = (subfolder as TFolder).name;
+			await this.collectNotesFromFolder(subfolder as TFolder, tag, newCards);
 		}
 
 		// Deduplicate by filePath to avoid rendering duplicates
@@ -631,9 +623,7 @@ class FolderKanbanView extends ItemView {
 
 		const editBtn = headerEl.createEl('button', { text: 'Customize', cls: 'kanban-edit-btn' });
 		editBtn.addEventListener('click', () => {
-			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => {
-				void this.refresh();
-			}).open();
+			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.boardFile!.path, this.boardFile!, this.cards, () => void this.refresh()).open();
 		});
 
 		// Create 
@@ -722,7 +712,7 @@ class FolderKanbanView extends ItemView {
 
 			const shadowRoot = cardEl.shadowRoot;
 			if (shadowRoot) {
-				const nextTaskEl = shadowRoot.querySelector('.next-task') as HTMLElement;
+				const nextTaskEl = shadowRoot.querySelector('.next-task');
 				if (nextTaskEl) {
 					if (nextTask) {
 						nextTaskEl.textContent = nextTask;
@@ -903,20 +893,17 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 			.addButton(btn => btn
 				.setButtonText('Add')
 				.onClick(async () => {
-					const patternInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"project\\""]')[0] as HTMLInputElement;
-					const columnsInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"Backlog, Active, Review, Done\\""]')[0] as HTMLInputElement;
-					
-					const pattern = patternInput?.value?.trim();
-					const columns = columnsInput?.value?.trim();
+				const patternInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"project\\""]')[0] as HTMLInputElement;
+				const columnsInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"Backlog, Active, Review, Done\\""]')[0] as HTMLInputElement;
+				
+				const pattern = patternInput?.value?.trim();
+				const columns = columnsInput?.value?.trim();
 
-					if (pattern && columns) {
-						const columnsList = columns.split(',').map(c => c.trim()).filter(c => c);
-						if (columnsList.length > 0) {
-							this.plugin.settings.customColumns[pattern] = columnsList;
-							await this.plugin.saveSettings();
-							patternInput.value = '';
-							columnsInput.value = '';
-							this.display();
+				if (pattern && columns) {
+					const columnsList = columns.split(',').map((c: string) => c.trim()).filter((c: string) => c);
+					if (columnsList.length > 0) {
+						this.plugin.settings.customColumns[pattern] = columnsList;
+						await this.plugin.saveSettings();
 						}
 					}
 				}));
@@ -1130,48 +1117,41 @@ class BoardCustomizeModal extends Modal {
 		const tagNameInput = addCustomRow.createEl('input', { 
 			type: 'text',
 			attr: { placeholder: 'e.g., Anatomy' } 
-		}) as HTMLInputElement;
-		tagNameInput.addEventListener('change', (e) => {
-			tagNameValue = (e.target as HTMLInputElement).value;
-		});
+	});
+	tagNameInput.addEventListener('change', (e) => {
+		const target = e.target as HTMLInputElement;
+		tagNameValue = target.value;
+	});
 
-		const colorPicker = addCustomRow.createEl('input', { 
-			type: 'color',
-			attr: { value: tagColorValue } 
-		}) as HTMLInputElement;
-		colorPicker.addEventListener('change', (e) => {
-			tagColorValue = (e.target as HTMLInputElement).value;
-		});
+	const colorPicker = addCustomRow.createEl('input', { 
+		type: 'color',
+		attr: { value: tagColorValue } 
+	});
+	colorPicker.addEventListener('change', (e) => {
+		const target = e.target as HTMLInputElement;
+		tagColorValue = target.value;
+	});
 
-		const addBtn = addCustomRow.createEl('button', { text: 'Add', cls: 'add-custom-btn' });		addBtn.addEventListener('click', () => {
-			if (tagNameValue && /^#[0-9A-F]{6}$/i.test(tagColorValue)) {
-				this.tempTagColors[tagNameValue] = tagColorValue;
-				this.onOpen();
-			}
-		});
+	const addBtn = addCustomRow.createEl('button', { text: 'Add', cls: 'add-custom-btn' });		
+	addBtn.addEventListener('click', () => {
+		if (tagNameValue && /^#[0-9A-F]{6}$/i.test(tagColorValue)) {
+			this.tempTagColors[tagNameValue] = tagColorValue;
+			void this.onOpen();
+		}
+	});
 
-		// Add new tag color - REMOVED (moved above)
-
-		// Buttons
-		const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
-		
-		const saveBtn = btnContainer.createEl('button', { text: 'Save', cls: 'modal-save-btn' });
-		saveBtn.addEventListener('click', async () => {
-			// Save columns to Board.md if it exists
-			if (this.boardFile) {
-				let boardContent = this.boardContent;
-				const columnLine = this.tempColumns.join(', ');
-				
-				// Check if ## Columns section exists
-				if (boardContent.includes('## Columns')) {
-					// Replace existing columns section - match from ## Columns to end of line
-					boardContent = boardContent.replace(
-						/##\s+Columns\s*\n[^\n]*/m,
-						`## Columns\n${columnLine}`
-					);
-				} else {
-					// Add new columns section at the beginning
-					boardContent = `## Columns\n${columnLine}\n\n${boardContent}`;
+	// Buttons
+	const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+	
+	const saveBtn = btnContainer.createEl('button', { text: 'Save', cls: 'modal-save-btn' });
+	saveBtn.addEventListener('click', async () => {
+		// Save columns to Board.md if it exists
+		if (this.boardFile) {
+			let boardContent = this.boardContent;
+			const columnLine = this.tempColumns.join(', ');
+			
+			// Check if ## Columns section exists
+			if (boardContent.includes('## Columns')) {
 				}
 				
 				// Write the modified content back to the file
@@ -1219,14 +1199,14 @@ class ChecklistView extends ItemView {
 	getDisplayText(): string { return 'Checklist'; }
 	getIcon(): string { return 'check-square'; }
 
-	async onOpen() { await void this.refresh(); }
+	async onOpen() { await this.refresh(); }
 
 	async setState(state: Record<string, unknown>): Promise<void> {
 		if (state?.file) {
 			const file = this.app.vault.getAbstractFileByPath(state.file as string);
 			if (file instanceof TFile) {
 				this.file = file;
-				await void this.refresh();
+				await this.refresh();
 			}
 		}
 	}
@@ -1261,8 +1241,8 @@ class ChecklistView extends ItemView {
 
 		// Inline new item input row (checkbox + text input; Enter to add)
 		const newRow = list.createDiv({ cls: 'checklist-item checklist-new-row' });
-		const newCb = newRow.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
-		const newInput = newRow.createEl('input', { type: 'text' }) as HTMLInputElement;
+		const newCb = newRow.createEl('input', { type: 'checkbox' });
+		const newInput = newRow.createEl('input', { type: 'text' });
 		newInput.placeholder = 'Add item and press Enter';
 		const tryAdd = async () => {
 			const text = newInput.value.trim();
@@ -1272,7 +1252,7 @@ class ChecklistView extends ItemView {
 		};
 		// Multiple listeners to ensure reliability in Obsidian views
 		newInput.addEventListener('keydown', async (e: KeyboardEvent) => {
-			if (e.key === 'Enter' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || (e as KeyboardEvent).keyCode === 13) {
+			if (e.key === 'Enter' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) ) {
 				e.preventDefault();
 				e.stopPropagation();
 				(e as Event).stopImmediatePropagation?.();
@@ -1280,8 +1260,7 @@ class ChecklistView extends ItemView {
 			}
 		}, true);
 		newInput.addEventListener('keypress', async (e: KeyboardEvent) => {
-			const code = (e as KeyboardEvent).keyCode || (e as KeyboardEvent).which;
-			if (e.key === 'Enter' || code === 13) {
+			if (e.key === 'Enter') {
 				e.preventDefault();
 				e.stopPropagation();
 				(e as Event).stopImmediatePropagation?.();
@@ -1289,8 +1268,7 @@ class ChecklistView extends ItemView {
 			}
 		}, true);
 		newInput.addEventListener('keyup', async (e: KeyboardEvent) => {
-			const code = (e as KeyboardEvent).keyCode || (e as KeyboardEvent).which;
-			if (e.key === 'Enter' || code === 13) {
+			if (e.key === 'Enter') {
 				e.preventDefault();
 				e.stopPropagation();
 				(e as Event).stopImmediatePropagation?.();
@@ -1316,7 +1294,7 @@ class ChecklistView extends ItemView {
 		await this.plugin.setChecklist(this.file.path, items);
 		this.focusNewInputNext = true;
 		this.plugin.refreshAllKanbanViews();
-		await void this.refresh();
+		await this.refresh();
 	}
 
 	async toggleItem(index: number, checked: boolean) {
@@ -1326,7 +1304,7 @@ class ChecklistView extends ItemView {
 			items[index].checked = checked;
 			await this.plugin.setChecklist(this.file.path, items);
 			this.plugin.refreshAllKanbanViews();
-			await void this.refresh();
+			await this.refresh();
 		}
 	}
 
@@ -1336,9 +1314,10 @@ class ChecklistView extends ItemView {
 		items.splice(index, 1);
 		await this.plugin.setChecklist(this.file.path, items);
 		this.plugin.refreshAllKanbanViews();
-		await void this.refresh();
+		await this.refresh();
 	}
 }
+
 
 
 

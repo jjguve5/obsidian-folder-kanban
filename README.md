@@ -5,6 +5,14 @@ An Obsidian plugin that transforms your folder structure into a Kanban board vie
 ![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-purple)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
+## 📸 Screenshots
+
+![Kanban Board View](screenshots/kanban-board.png)
+*Main board view showing cards organized by column with progress tracking*
+
+![Customize Modal](screenshots/customize-modal.png)
+*Per-board customization: edit columns and tag colors*
+
 ## 🎯 Features
 
 ### 📊 **Folder-Based Kanban Boards**

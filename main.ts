@@ -1,0 +1,1126 @@
+import { 
+	App, 
+	Plugin, 
+	PluginSettingTab, 
+	Setting, 
+	ItemView, 
+	WorkspaceLeaf,
+	TFile,
+	TFolder,
+	Menu,
+	Notice,
+	Modal,
+	MarkdownView,
+	setIcon
+} from 'obsidian';
+import './components';
+
+interface FolderKanbanSettings {
+	boardFileName: string;
+	columns: {
+		[key: string]: string[];  // folder path -> column names
+	};
+	customColumns: {
+		[key: string]: string[];  // folder name pattern -> columns
+	};
+	tagColors: {
+		[key: string]: string;    // tag name -> hex color
+	};
+}
+
+const DEFAULT_SETTINGS: FolderKanbanSettings = {
+	boardFileName: 'Board.md',
+	columns: {},
+	customColumns: {
+		'learn': ['To Learn', 'Learning', 'Mastered'],
+		'entertainment': ['Want To Watch', 'Watching', 'Done'],
+		'game': ['To Do', 'In Progress', 'Done']
+	},
+	tagColors: {
+		'default': '#3b82f6'
+	}
+}
+
+interface CardData {
+	filePath: string;
+	title: string;
+	tag: string;
+	column: string;
+}
+
+interface BoardState {
+	cards: CardData[];
+}
+
+// Deduplicate cards by normalized path (case-insensitive to avoid duplicates on Windows)
+const dedupeCards = (cards: CardData[]): CardData[] => {
+	const map = new Map<string, CardData>();
+	for (const c of cards) {
+		const key = c.filePath.toLowerCase();
+		if (!map.has(key)) map.set(key, c);
+	}
+	return Array.from(map.values());
+};
+
+const VIEW_TYPE_FOLDER_KANBAN = 'folder-kanban-view';
+const VIEW_TYPE_CHECKLIST = 'checklist-view';
+
+export default class FolderKanbanPlugin extends Plugin {
+	settings: FolderKanbanSettings;
+	boardStates: Map<string, BoardState> = new Map();
+
+	async onload() {
+		await this.loadSettings();
+
+		// Register the custom view
+		this.registerView(
+			VIEW_TYPE_FOLDER_KANBAN,
+			(leaf) => new FolderKanbanView(leaf, this)
+		);
+
+		// Register checklist side view
+		this.registerView(
+			VIEW_TYPE_CHECKLIST,
+			(leaf) => new ChecklistView(leaf, this)
+		);
+
+
+
+		// When a file is opened, check if it's a Board.md
+		this.registerEvent(
+			this.app.workspace.on('file-open', (file) => {
+				if (file && file.name === this.settings.boardFileName) {
+					this.openKanbanBoardInPlace(file);
+				}
+			})
+		);
+
+		// Add context menu option for folders
+		this.registerEvent(
+			this.app.workspace.on('file-menu', (menu, file) => {
+				if (file instanceof TFolder) {
+					menu.addItem((item) => {
+						item
+							.setTitle('Create Folder Board')
+							.setIcon('layout-dashboard')
+							.onClick(async () => {
+								await this.createBoardInFolder(file);
+							});
+					});
+				}
+			})
+		);
+
+		// Add command to create/refresh board
+		this.addCommand({
+			id: 'refresh-kanban-board',
+			name: 'Refresh Kanban Board',
+			callback: () => {
+				const activeView = this.app.workspace.getActiveViewOfType(FolderKanbanView);
+				if (activeView) {
+					activeView.refresh();
+					new Notice('Board refreshed!');
+				}
+			}
+		});
+
+
+		// Ensure a persistent right-side checklist tab exists and stays synced to active note
+		const ensureChecklistLeaf = () => {
+			// Ensure a single checklist leaf exists in the right sidebar
+			let leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHECKLIST);
+			let rightLeaf: WorkspaceLeaf | null = null;
+
+			if (leaves.length > 0) {
+				rightLeaf = leaves[0];
+			} else {
+				// Reuse existing right leaf if present; otherwise create one without stacking
+				rightLeaf = this.app.workspace.getRightLeaf(false) ?? this.app.workspace.getRightLeaf(true);
+				const file = this.app.workspace.getActiveFile();
+				const path = file instanceof TFile ? file.path : undefined;
+				if (rightLeaf) {
+					rightLeaf.setViewState({ type: VIEW_TYPE_CHECKLIST, state: { file: path }, active: true });
+				}
+			}
+
+			if (rightLeaf) {
+				// Pin and reveal so it shows as a dedicated top tab
+				rightLeaf.setPinned(false);
+				this.app.workspace.revealLeaf(rightLeaf);
+				this.app.workspace.setActiveLeaf(rightLeaf);
+			}
+		};
+		this.app.workspace.onLayoutReady(() => {
+			ensureChecklistLeaf();
+		});
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+			const file = this.app.workspace.getActiveFile();
+			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CHECKLIST);
+			if (leaves.length > 0) {
+				const leaf = leaves[0];
+				leaf.setViewState({ type: VIEW_TYPE_CHECKLIST, state: { file: file instanceof TFile ? file.path : undefined } });
+			}
+			if (leaves.length === 0) {
+				ensureChecklistLeaf();
+			}
+			// Also enforce board view for Board.md
+			if (file && file.name === this.settings.boardFileName) {
+				const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (mdView && file instanceof TFile) {
+					this.openKanbanBoardInPlace(file);
+				}
+			}
+		}));
+
+		this.addSettingTab(new FolderKanbanSettingTab(this.app, this));
+
+		console.log('Folder Kanban Plugin loaded!');
+	}
+
+	async openKanbanBoardInPlace(file: TFile) {
+		// Prefer converting the markdown leaf that opened this file
+		const mdLeaves = this.app.workspace.getLeavesOfType('markdown');
+		let targetLeaf: WorkspaceLeaf | null = null;
+		for (const leaf of mdLeaves) {
+			const v = leaf.view as any;
+			if (v?.file?.path === file.path) {
+				targetLeaf = leaf;
+				break;
+			}
+		}
+
+		if (!targetLeaf) {
+			const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+			targetLeaf = existing[0] || this.app.workspace.getLeaf(false);
+		}
+
+		await targetLeaf.setViewState({
+			type: VIEW_TYPE_FOLDER_KANBAN,
+			state: { file: file.path }
+		});
+		this.app.workspace.revealLeaf(targetLeaf);
+	}
+
+	async openKanbanBoard(file: TFile) {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+		let leaf: WorkspaceLeaf;
+
+		if (leaves.length > 0) {
+			leaf = leaves[0];
+		} else {
+			leaf = this.app.workspace.getLeaf(false);
+		}
+
+		await leaf.setViewState({
+			type: VIEW_TYPE_FOLDER_KANBAN,
+			state: { file: file.path }
+		});
+
+		this.app.workspace.revealLeaf(leaf);
+	}
+
+	async createBoardInFolder(folder: TFolder) {
+		const boardPath = `${folder.path}/${this.settings.boardFileName}`;
+		
+		// Check if board already exists
+		const existingFile = this.app.vault.getAbstractFileByPath(boardPath);
+		if (existingFile) {
+			new Notice('Board already exists in this folder!');
+			// Open the existing board
+			if (existingFile instanceof TFile) {
+				await this.openKanbanBoard(existingFile);
+			}
+			return;
+		}
+
+		// Create the board file
+		const boardFile = await this.app.vault.create(boardPath, '# Folder Board\n\nThis board will automatically show all notes from subfolders.');
+		
+		new Notice(`Board created in ${folder.name}!`);
+		
+		// Open the newly created board
+		await this.openKanbanBoard(boardFile);
+	}
+
+	onunload() {
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_FOLDER_KANBAN);
+	}
+
+	async loadSettings() {
+		const data = await this.loadData();
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+		
+		// Load board states if they exist
+		if (data && data.boardStates) {
+			Object.entries(data.boardStates).forEach(([key, value]) => {
+				const state = value as BoardState;
+				const deduped = {
+					cards: dedupeCards(state.cards)
+				};
+				this.boardStates.set(key, deduped);
+			});
+		}
+	}
+
+	async saveSettings() {
+		const allStates: {[key: string]: BoardState} = {};
+		this.boardStates.forEach((value, key) => {
+			allStates[key] = value;
+		});
+		await this.saveData({
+			...this.settings,
+			boardStates: allStates
+		});
+	}
+
+	async saveBoardState(boardPath: string, state: BoardState) {
+		const deduped = { cards: Array.from(new Map(state.cards.map(c => [c.filePath, c])).values()) };
+		this.boardStates.set(boardPath, deduped);
+		await this.saveSettings();
+	}
+
+	loadBoardState(boardPath: string): BoardState | null {
+		const state = this.boardStates.get(boardPath) || null;
+		if (!state) return null;
+		return { cards: Array.from(new Map(state.cards.map(c => [c.filePath, c])).values()) };
+	}
+}
+
+class FolderKanbanView extends ItemView {
+	plugin: FolderKanbanPlugin;
+	boardFile: TFile | null = null;
+	folderPath: string = '';
+	columns: string[] = ['To Do', 'In Progress', 'Done'];
+	cards: CardData[] = [];
+
+	constructor(leaf: WorkspaceLeaf, plugin: FolderKanbanPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType(): string {
+		return VIEW_TYPE_FOLDER_KANBAN;
+	}
+
+	getDisplayText(): string {
+		return this.boardFile ? `Kanban: ${this.boardFile.basename}` : 'Kanban Board';
+	}
+
+	getIcon(): string {
+		return 'layout-dashboard';
+	}
+
+	async onOpen() {
+		console.log('FolderKanbanView onOpen called');
+		await this.refresh();
+	}
+
+	async setState(state: any, result: any): Promise<void> {
+		console.log('FolderKanbanView setState called with state:', state);
+		if (state.file) {
+			const file = this.app.vault.getAbstractFileByPath(state.file);
+			if (file instanceof TFile) {
+				this.boardFile = file;
+				this.folderPath = file.parent?.path || '';
+				console.log('Set boardFile to:', this.boardFile.path);
+				await this.refresh();
+			}
+		}
+	}
+
+	async refresh() {
+		console.log('FolderKanbanView refresh called, boardFile:', this.boardFile?.path);
+		if (!this.boardFile) return;
+
+		// Determine columns based on folder name or use defaults
+		this.detectColumns();
+
+		// Scan folder structure and build cards
+		await this.scanFolderForCards();
+
+		// Load saved state
+		const savedState = this.plugin.loadBoardState(this.boardFile.path);
+		if (savedState) {
+			// Merge saved state with current files
+			this.mergeState(savedState);
+		}
+
+		// Render the board
+		this.render();
+	}
+
+	detectColumns() {
+		// Detect column names based on folder context
+		const folderName = this.boardFile?.parent?.name.toLowerCase() || '';
+		
+		// Check custom column settings
+		for (const [pattern, cols] of Object.entries(this.plugin.settings.customColumns)) {
+			if (folderName.includes(pattern)) {
+				this.columns = cols;
+				return;
+			}
+		}
+		
+		// Default columns
+		this.columns = ['To Do', 'In Progress', 'Done'];
+	}
+
+	async scanFolderForCards() {
+		if (!this.boardFile?.parent) return;
+
+		const parentFolder = this.boardFile.parent;
+		const newCards: CardData[] = [];
+
+		// Get all subfolders
+		const subfolders = parentFolder.children.filter(
+			child => child instanceof TFolder && child.name !== '.obsidian'
+		) as TFolder[];
+
+		// For each subfolder, get all markdown files
+		for (const subfolder of subfolders) {
+			const tag = subfolder.name;
+			await this.collectNotesFromFolder(subfolder, tag, newCards);
+		}
+
+		// Deduplicate by filePath to avoid rendering duplicates
+		const dedupedCards = dedupeCards(newCards);
+
+		// Update cards while preserving column assignments
+		const existingCards = new Map(this.cards.map(c => [c.filePath, c]));
+		this.cards = dedupedCards.map(card => {
+			const existing = existingCards.get(card.filePath);
+			return existing || { ...card, column: this.columns[0] };
+		});
+
+		// Final guard against any residual duplicates
+		this.cards = dedupeCards(this.cards);
+	}
+
+	async collectNotesFromFolder(folder: TFolder, tag: string, cards: CardData[]) {
+		for (const child of folder.children) {
+			if (child instanceof TFile && child.extension === 'md') {
+				// Skip the board file itself
+				if (child.name === this.plugin.settings.boardFileName) continue;
+
+				cards.push({
+					filePath: child.path,
+					title: child.basename,
+					tag: tag,
+					column: this.columns[0] // Default to first column
+				});
+			} else if (child instanceof TFolder) {
+				// Recursively collect from subfolders
+				await this.collectNotesFromFolder(child, tag, cards);
+			}
+		}
+	}
+
+	mergeState(savedState: BoardState) {
+		const savedCards = new Map(savedState.cards.map(c => [c.filePath.toLowerCase(), c]));
+
+		this.cards = this.cards.map(card => {
+			const saved = savedCards.get(card.filePath.toLowerCase());
+			if (saved && this.columns.includes(saved.column)) {
+				return { ...card, column: saved.column };
+			}
+			return card;
+		});
+
+		// Ensure no duplicates remain after merging saved state
+		this.cards = dedupeCards(this.cards);
+	}
+
+	render() {
+		// Hard reset the view each time to avoid any residual DOM from previous renders
+		this.containerEl.empty();
+		const container = this.containerEl.createDiv();
+		container.addClass('folder-kanban-view');
+
+		// Final display-level dedupe to prevent any render-time duplicates
+		this.cards = dedupeCards(this.cards);
+
+		// Guard: if no board file, show placeholder
+		if (!this.boardFile) {
+			container.createDiv({ cls: 'kanban-placeholder', text: 'No board file loaded. Please open a Board.md file.' });
+			return;
+		}
+
+		// Create header with edit button
+		const headerEl = container.createDiv({ cls: 'kanban-view-header' });
+		const titleEl = headerEl.createDiv({ cls: 'kanban-view-title' });
+		titleEl.createSpan({ text: `Kanban: ${this.boardFile.basename}` });
+
+		const editBtn = headerEl.createEl('button', { text: 'Customize', cls: 'kanban-edit-btn' });
+		editBtn.addEventListener('click', () => {
+			new BoardCustomizeModal(this.app, this.plugin, this.boardFile!.parent!.name, this.cards, () => {
+				this.refresh();
+			}).open();
+		});
+
+		// Create 
+		// Create kanban board
+		const boardEl = container.createDiv({ cls: 'kanban-board' });
+
+		// Create columns
+		this.columns.forEach(columnName => {
+			const columnEl = boardEl.createDiv({ cls: 'kanban-column' });
+			
+			// Column header
+			const headerEl = columnEl.createDiv({ cls: 'kanban-column-header' });
+			headerEl.createSpan({ text: columnName, cls: 'kanban-column-title' });
+			
+			const cardsInColumn = this.cards.filter(c => c.column === columnName);
+			headerEl.createSpan({ 
+				text: ` (${cardsInColumn.length})`, 
+				cls: 'kanban-column-count' 
+			});
+
+			// Column content
+			const contentEl = columnEl.createDiv({ cls: 'kanban-column-content' });
+			
+			// Add drag-drop support
+			this.setupDropZone(contentEl, columnName);
+
+
+			// Render cards (display-level dedupe per column)
+			const uniqueCards = new Map<string, CardData>();
+			for (const card of cardsInColumn) {
+				if (!uniqueCards.has(card.filePath)) uniqueCards.set(card.filePath, card);
+			}
+			uniqueCards.forEach(card => {
+				this.renderCard(contentEl, card);
+			});
+		});
+	}
+
+	renderCard(container: HTMLElement, card: CardData) {
+		// Get tag color from settings
+		const tagColor = this.plugin.settings.tagColors[card.tag] || this.plugin.settings.tagColors['default'] || '#3b82f6';
+
+		// Create custom kanban-card element
+		const cardEl = document.createElement('kanban-card') as any;
+		cardEl.setAttribute('title', card.title);
+		cardEl.setAttribute('tag', card.tag);
+		cardEl.setAttribute('tagColor', tagColor);
+		cardEl.dataset.filePath = card.filePath;
+		cardEl.setAttribute('draggable', 'true');
+
+		// Remove any existing rendered card with same filePath in this container (extra safety)
+		container.querySelectorAll('[data-file-path]').forEach((el) => {
+			if ((el as HTMLElement).dataset.filePath === card.filePath) {
+				el.remove();
+			}
+		});
+
+		// Append to DOM FIRST to trigger connectedCallback and initialize progress component
+		container.appendChild(cardEl);
+
+		// Fetch checklist info and update card
+		const fileForProgress = this.app.vault.getAbstractFileByPath(card.filePath);
+		if (fileForProgress instanceof TFile) {
+			this.app.vault.read(fileForProgress).then((content) => {
+				const lines = content.split('\n');
+				let total = 0, checked = 0;
+				for (const line of lines) {
+					const m = line.match(/^\s*[-*]\s+\[([x ])\]\s+(.+)$/i);
+					if (m) {
+						total++;
+						if (m[1].toLowerCase() === 'x') checked++;
+					}
+				}
+				if (total > 0) {
+					cardEl.setAttribute('checked', checked.toString());
+					cardEl.setAttribute('total', total.toString());
+				}
+			}).catch(() => {});
+		}
+
+		// Drag events - handle on element itself
+		cardEl.addEventListener('dragstart', (e: DragEvent) => {
+			if (e.dataTransfer) {
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('text/plain', card.filePath);
+			}
+			cardEl.classList.add('dragging');
+		}, false);
+
+		cardEl.addEventListener('dragend', () => {
+			cardEl.classList.remove('dragging');
+		}, false);
+
+		// Click to open note
+		cardEl.addEventListener('click', async () => {
+			const file = this.app.vault.getAbstractFileByPath(card.filePath);
+			if (file instanceof TFile) {
+				await this.app.workspace.getLeaf(false).openFile(file);
+			}
+		});
+
+		// Right-click menu
+		cardEl.addEventListener('contextmenu', (e: MouseEvent) => {
+			e.preventDefault();
+			const menu = new Menu();
+			
+			menu.addItem((item) => {
+				item.setTitle('Open in new pane')
+					.setIcon('go-to-file')
+					.onClick(async () => {
+						const file = this.app.vault.getAbstractFileByPath(card.filePath);
+						if (file instanceof TFile) {
+							await this.app.workspace.getLeaf('split').openFile(file);
+						}
+					});
+			});
+
+			this.columns.forEach(col => {
+				if (col !== card.column) {
+					menu.addItem((item) => {
+						item.setTitle(`Move to ${col}`)
+							.setIcon('arrow-right')
+							.onClick(() => {
+								this.moveCard(card.filePath, col);
+							});
+					});
+				}
+			});
+
+			menu.showAtMouseEvent(e);
+		});
+	}
+
+	setupDropZone(element: HTMLElement, columnName: string) {
+		element.addEventListener('dragover', (e) => {
+			e.preventDefault();
+			element.addClass('drag-over');
+		});
+
+		element.addEventListener('dragleave', () => {
+			element.removeClass('drag-over');
+		});
+
+		element.addEventListener('drop', async (e) => {
+			e.preventDefault();
+			element.removeClass('drag-over');
+			
+			const filePath = e.dataTransfer?.getData('text/plain');
+			if (filePath) {
+				await this.moveCard(filePath, columnName);
+			}
+		});
+	}
+
+	async moveCard(filePath: string, targetColumn: string) {
+		const card = this.cards.find(c => c.filePath === filePath);
+		if (card) {
+			card.column = targetColumn;
+			await this.saveState();
+			this.render();
+		}
+	}
+
+	async saveState() {
+		if (!this.boardFile) return;
+
+		// Deduplicate before persisting
+		const state: BoardState = {
+			cards: dedupeCards(this.cards)
+		};
+
+		await this.plugin.saveBoardState(this.boardFile.path, state);
+	}
+
+	async onClose() {
+		// Cleanup
+	}
+}
+
+class FolderKanbanSettingTab extends PluginSettingTab {
+	plugin: FolderKanbanPlugin;
+
+	constructor(app: App, plugin: FolderKanbanPlugin) {
+		super(app, plugin);
+		this.plugin = plugin;
+	}
+
+	display(): void {
+		const {containerEl} = this;
+		containerEl.empty();
+
+		containerEl.createEl('h2', {text: 'Folder Kanban Settings'});
+
+		// Board file name setting
+		new Setting(containerEl)
+			.setName('Board file name')
+			.setDesc('Name of the file that will be treated as a kanban board (default: Board.md)')
+			.addText(text => text
+				.setPlaceholder('Board.md')
+				.setValue(this.plugin.settings.boardFileName)
+				.onChange(async (value) => {
+					this.plugin.settings.boardFileName = value || 'Board.md';
+					await this.plugin.saveSettings();
+				}));
+
+		// Custom columns section
+		containerEl.createEl('h3', {text: 'Column Customization'});
+		containerEl.createEl('p', {
+			text: 'Define custom columns for different folder patterns. Use folder names (e.g., "learn", "entertainment", "game") as keys.',
+			cls: 'setting-item-description'
+		});
+
+		Object.entries(this.plugin.settings.customColumns).forEach(([pattern, columns]) => {
+			new Setting(containerEl)
+				.setName(`Columns for "${pattern}"`)
+				.setDesc('Separate columns with commas')
+				.addText(text => text
+					.setPlaceholder('To Do, In Progress, Done')
+					.setValue(columns.join(', '))
+					.onChange(async (value) => {
+						const newColumns = value.split(',').map(c => c.trim()).filter(c => c);
+						if (newColumns.length > 0) {
+							this.plugin.settings.customColumns[pattern] = newColumns;
+							await this.plugin.saveSettings();
+						}
+					}));
+
+			new Setting(containerEl)
+				.addButton(btn => btn
+					.setButtonText('Remove')
+					.onClick(async () => {
+						delete this.plugin.settings.customColumns[pattern];
+						await this.plugin.saveSettings();
+						this.display();
+					}));
+		});
+
+		// Add new column pattern
+		new Setting(containerEl)
+			.setName('Add new folder pattern')
+			.addText(text => text
+				.setPlaceholder('e.g., "project"')
+				.onChange(value => text.inputEl.dataset.pattern = value))
+			.addText(text => text
+				.setPlaceholder('e.g., "Backlog, Active, Review, Done"')
+				.onChange(value => text.inputEl.dataset.columns = value))
+			.addButton(btn => btn
+				.setButtonText('Add')
+				.onClick(async () => {
+					const patternInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"project\\""]')[0] as HTMLInputElement;
+					const columnsInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"Backlog, Active, Review, Done\\""]')[0] as HTMLInputElement;
+					
+					const pattern = patternInput?.value?.trim();
+					const columns = columnsInput?.value?.trim();
+
+					if (pattern && columns) {
+						const columnsList = columns.split(',').map(c => c.trim()).filter(c => c);
+						if (columnsList.length > 0) {
+							this.plugin.settings.customColumns[pattern] = columnsList;
+							await this.plugin.saveSettings();
+							patternInput.value = '';
+							columnsInput.value = '';
+							this.display();
+						}
+					}
+				}));
+
+		// Tag colors section
+		containerEl.createEl('h3', {text: 'Tag Color Customization'});
+		containerEl.createEl('p', {
+			text: 'Set custom colors for tag categories. Use hex colors (e.g., #3b82f6)',
+			cls: 'setting-item-description'
+		});
+
+		Object.entries(this.plugin.settings.tagColors).forEach(([tag, color]) => {
+			new Setting(containerEl)
+				.setName(`Color for "${tag}" tag`)
+				.addText(text => text
+					.setPlaceholder('#3b82f6')
+					.setValue(color)
+					.onChange(async (value) => {
+						// Validate hex color
+						if (/^#[0-9A-F]{6}$/i.test(value)) {
+							this.plugin.settings.tagColors[tag] = value;
+							await this.plugin.saveSettings();
+						}
+					}));
+
+			if (tag !== 'default') {
+				new Setting(containerEl)
+					.addButton(btn => btn
+						.setButtonText('Remove')
+						.onClick(async () => {
+							delete this.plugin.settings.tagColors[tag];
+							await this.plugin.saveSettings();
+							this.display();
+						}));
+			}
+		});
+
+		// Add new tag color
+		new Setting(containerEl)
+			.setName('Add custom tag color')
+			.addText(text => text
+				.setPlaceholder('e.g., "Anatomy"')
+				.onChange(value => text.inputEl.dataset.tag = value))
+			.addText(text => text
+				.setPlaceholder('e.g., #e74c3c')
+				.onChange(value => text.inputEl.dataset.color = value))
+			.addButton(btn => btn
+				.setButtonText('Add')
+				.onClick(async () => {
+					const tagInput = containerEl.querySelectorAll('input[placeholder="e.g., \\"Anatomy\\""]')[0] as HTMLInputElement;
+					const colorInput = containerEl.querySelectorAll('input[placeholder="e.g., #e74c3c"]')[0] as HTMLInputElement;
+					
+					const tag = tagInput?.value?.trim();
+					const color = colorInput?.value?.trim();
+
+					if (tag && /^#[0-9A-F]{6}$/i.test(color)) {
+						this.plugin.settings.tagColors[tag] = color;
+						await this.plugin.saveSettings();
+						tagInput.value = '';
+						colorInput.value = '';
+						this.display();
+					}
+				}));
+	}
+}
+
+class BoardCustomizeModal extends Modal {
+	plugin: FolderKanbanPlugin;
+	folderName: string;
+	cards: CardData[];
+	onSave: () => void;
+	tempCustomColumns: {[key: string]: string[]};
+	tempTagColors: {[key: string]: string};
+
+	constructor(app: App, plugin: FolderKanbanPlugin, folderName: string, cards: CardData[], onSave: () => void) {
+		super(app);
+		this.plugin = plugin;
+		this.folderName = folderName;
+		this.cards = cards;
+		this.onSave = onSave;
+		this.tempCustomColumns = JSON.parse(JSON.stringify(plugin.settings.customColumns));
+		this.tempTagColors = JSON.parse(JSON.stringify(plugin.settings.tagColors));
+	}
+
+	onOpen() {
+		const {contentEl} = this;
+		contentEl.empty();
+		contentEl.createEl('h2', { text: `Customize ${this.folderName} Board` });
+
+		// Columns section
+		contentEl.createEl('h3', { text: 'Columns' });
+		
+		const columnsContainer = contentEl.createDiv({ cls: 'customize-section' });
+		
+		// Show current columns for this folder
+		let folderPattern = '';
+		for (const [pattern, cols] of Object.entries(this.tempCustomColumns)) {
+			if (this.folderName.toLowerCase().includes(pattern)) {
+				folderPattern = pattern;
+				break;
+			}
+		}
+
+		if (folderPattern) {
+			const colsSetting = new Setting(columnsContainer)
+				.setName(`Columns for "${folderPattern}"`)
+				.setDesc('Separate columns with commas');
+
+			colsSetting.addText(text => text
+				.setPlaceholder('To Do, In Progress, Done')
+				.setValue(this.tempCustomColumns[folderPattern].join(', '))
+				.onChange(value => {
+					const newCols = value.split(',').map(c => c.trim()).filter(c => c);
+					if (newCols.length > 0) {
+						this.tempCustomColumns[folderPattern] = newCols;
+					}
+				}));
+		} else {
+			// Option to create new pattern
+			const newSetting = new Setting(columnsContainer)
+				.setName('Create custom columns for this folder')
+				.setDesc('Pattern name (e.g., "learn", "entertainment")');
+
+			let patternValue = '';
+			let columnsValue = '';
+
+			newSetting.addText(text => text
+				.setPlaceholder('e.g., learn')
+				.onChange(value => patternValue = value));
+
+			newSetting.addText(text => text
+				.setPlaceholder('To Do, In Progress, Done')
+				.onChange(value => columnsValue = value));
+
+			newSetting.addButton(btn => btn
+				.setButtonText('Add')
+				.onClick(() => {
+					if (patternValue && columnsValue) {
+						const cols = columnsValue.split(',').map(c => c.trim()).filter(c => c);
+						if (cols.length > 0) {
+							this.tempCustomColumns[patternValue] = cols;
+							this.onOpen(); // Refresh modal
+						}
+					}
+				}));
+		}
+
+		// Tag colors section
+		contentEl.createEl('h3', { text: 'Tag Colors' });
+		const colorsContainer = contentEl.createDiv({ cls: 'customize-section' });
+
+		// Get all unique tags (detected + configured)
+		const allTags = new Set<string>();
+		this.cards.forEach(card => {
+			allTags.add(card.tag);
+		});
+		Object.keys(this.tempTagColors).forEach(tag => {
+			allTags.add(tag);
+		});
+
+		// Create grid container for tags
+		const tagGrid = colorsContainer.createDiv({ cls: 'tag-colors-grid' });
+
+		// Show all tags with color pickers using custom component
+		Array.from(allTags).forEach(tag => {
+			if (tag === 'default') return; // Skip default
+			
+			const color = this.tempTagColors[tag] || '#3b82f6';
+			const tagItem = document.createElement('tag-color-edit-item') as any;
+			tagItem.setAttribute('tagName', tag);
+			tagItem.setAttribute('color', color);
+			
+			tagItem.addEventListener('colorchange', (e: any) => {
+				this.tempTagColors[tag] = e.detail.color;
+			});
+			
+			tagItem.addEventListener('remove', () => {
+				delete this.tempTagColors[tag];
+				this.onOpen();
+			});
+			
+			tagGrid.appendChild(tagItem);
+		});
+
+		// Add new tag section
+		const addCustomSection = colorsContainer.createDiv({ cls: 'add-custom-tag-section' });
+		const addCustomTitle = addCustomSection.createEl('div', { cls: 'customize-section-label', text: 'Add custom tag color' });
+		
+		const addCustomRow = addCustomSection.createDiv({ cls: 'setting' });
+
+		let tagNameValue = '';
+		let tagColorValue = '#3b82f6';
+
+		const tagNameInput = addCustomRow.createEl('input', { 
+			type: 'text',
+			attr: { placeholder: 'e.g., Anatomy' } 
+		}) as HTMLInputElement;
+		tagNameInput.addEventListener('change', (e) => {
+			tagNameValue = (e.target as HTMLInputElement).value;
+		});
+
+		const colorPicker = addCustomRow.createEl('input', { 
+			type: 'color',
+			attr: { value: tagColorValue } 
+		}) as HTMLInputElement;
+		colorPicker.addEventListener('change', (e) => {
+			tagColorValue = (e.target as HTMLInputElement).value;
+		});
+
+		const addBtn = addCustomRow.createEl('button', { text: 'Add', cls: 'add-custom-btn' });
+		addBtn.style.padding = '8px 16px';
+		addBtn.style.backgroundColor = 'var(--interactive-accent)';
+		addBtn.style.color = 'var(--text-on-accent)';
+		addBtn.style.border = 'none';
+		addBtn.style.borderRadius = '4px';
+		addBtn.style.cursor = 'pointer';
+		addBtn.style.fontWeight = '500';
+		addBtn.style.transition = 'all 0.2s';
+		addBtn.addEventListener('mouseenter', () => {
+			addBtn.style.backgroundColor = 'var(--interactive-accent-hover)';
+		});
+		addBtn.addEventListener('mouseleave', () => {
+			addBtn.style.backgroundColor = 'var(--interactive-accent)';
+		});
+		addBtn.addEventListener('click', () => {
+			if (tagNameValue && /^#[0-9A-F]{6}$/i.test(tagColorValue)) {
+				this.tempTagColors[tagNameValue] = tagColorValue;
+				this.onOpen();
+			}
+		});
+
+		// Add new tag color - REMOVED (moved above)
+
+		// Buttons
+		const btnContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+		
+		const saveBtn = btnContainer.createEl('button', { text: 'Save', cls: 'modal-save-btn' });
+		saveBtn.addEventListener('click', async () => {
+			this.plugin.settings.customColumns = this.tempCustomColumns;
+			this.plugin.settings.tagColors = this.tempTagColors;
+			await this.plugin.saveSettings();
+			new Notice('Board settings saved!');
+			this.onSave();
+			this.close();
+		});
+
+		const cancelBtn = btnContainer.createEl('button', { text: 'Cancel', cls: 'modal-cancel-btn' });
+		cancelBtn.addEventListener('click', () => this.close());
+	}
+
+	onClose() {
+		const {contentEl} = this;
+		contentEl.empty();
+	}
+}
+
+class ChecklistView extends ItemView {
+	plugin: FolderKanbanPlugin;
+	file: TFile | null = null;
+	items: { text: string; checked: boolean; lineIndex: number }[] = [];
+	focusNewInputNext: boolean = false;
+
+	constructor(leaf: WorkspaceLeaf, plugin: FolderKanbanPlugin) {
+		super(leaf);
+		this.plugin = plugin;
+	}
+
+	getViewType(): string { return VIEW_TYPE_CHECKLIST; }
+	getDisplayText(): string { return 'Checklist'; }
+	getIcon(): string { return 'check-square'; }
+
+	async onOpen() { await this.refresh(); }
+
+	async setState(state: any): Promise<void> {
+		if (state?.file) {
+			const file = this.app.vault.getAbstractFileByPath(state.file);
+			if (file instanceof TFile) {
+				this.file = file;
+				await this.refresh();
+			}
+		}
+	}
+
+	async refresh() {
+		const container = this.containerEl.children[1] as HTMLElement || this.containerEl.createDiv();
+		container.empty();
+		container.addClass('checklist-side-view');
+
+		const header = container.createDiv({ cls: 'checklist-panel-header' });
+		header.createSpan({ text: this.file ? `Checklist: ${this.file.basename}` : 'Checklist' });
+
+		const list = container.createDiv({ cls: 'checklist-container' });
+		if (this.file) {
+			const content = await this.app.vault.read(this.file);
+			this.parseChecklist(content);
+			this.items.forEach((it, index) => {
+				const item = document.createElement('checklist-item') as any;
+				item.setAttribute('text', it.text);
+				if (it.checked) item.setAttribute('checked', '');
+				
+				item.addEventListener('toggle', (e: any) => {
+					this.toggleItem(index, e.detail.checked);
+				});
+				
+				item.addEventListener('remove', () => {
+					this.removeItem(index);
+				});
+				
+				list.appendChild(item);
+			});
+		}
+
+		// Inline new item input row (checkbox + text input; Enter to add)
+		const newRow = list.createDiv({ cls: 'checklist-item checklist-new-row' });
+		const newCb = newRow.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+		const newInput = newRow.createEl('input', { type: 'text' }) as HTMLInputElement;
+		newInput.placeholder = 'Add item and press Enter';
+		const tryAdd = async () => {
+			const text = newInput.value.trim();
+			if (text && this.file) {
+				await this.addItem(text, newCb.checked);
+			}
+		};
+		// Multiple listeners to ensure reliability in Obsidian views
+		newInput.addEventListener('keydown', async (e: KeyboardEvent) => {
+			if (e.key === 'Enter' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) || (e as any).keyCode === 13) {
+				e.preventDefault();
+				e.stopPropagation();
+				(e as any).stopImmediatePropagation?.();
+				await tryAdd();
+			}
+		}, true);
+		newInput.addEventListener('keypress', async (e: KeyboardEvent) => {
+			const code = (e as any).keyCode || (e as any).which;
+			if (e.key === 'Enter' || code === 13) {
+				e.preventDefault();
+				e.stopPropagation();
+				(e as any).stopImmediatePropagation?.();
+				await tryAdd();
+			}
+		}, true);
+		newInput.addEventListener('keyup', async (e: KeyboardEvent) => {
+			const code = (e as any).keyCode || (e as any).which;
+			if (e.key === 'Enter' || code === 13) {
+				e.preventDefault();
+				e.stopPropagation();
+				(e as any).stopImmediatePropagation?.();
+				await tryAdd();
+			}
+		}, true);
+
+		const progress = container.createDiv({ cls: 'checklist-progress' });
+		const total = this.items.length;
+		const checked = this.items.filter(i => i.checked).length;
+		progress.textContent = `${checked}/${total} completed`;
+
+		if (this.focusNewInputNext) {
+			newInput.focus();
+			this.focusNewInputNext = false;
+		}
+	}
+
+	parseChecklist(content: string) {
+		const lines = content.split('\n');
+		this.items = [];
+		for (let i = 0; i < lines.length; i++) {
+			const line = lines[i];
+			const match = line.match(/^\s*[-*]\s+\[([x ])\]\s+(.+)$/i);
+			if (match) this.items.push({ text: match[2], checked: match[1].toLowerCase() === 'x', lineIndex: i });
+		}
+	}
+
+	async addItem(text: string, checked: boolean) {
+		if (!this.file) return;
+		const content = await this.app.vault.read(this.file);
+		const mark = checked ? 'x' : ' ';
+		const newContent = content.endsWith('\n') ? `${content}- [${mark}] ${text}\n` : `${content}\n- [${mark}] ${text}\n`;
+		await this.app.vault.modify(this.file, newContent);
+		this.focusNewInputNext = true;
+		await this.refresh();
+	}
+
+	async toggleItem(index: number, checked: boolean) {
+		if (!this.file) return;
+		const content = await this.app.vault.read(this.file);
+		const lines = content.split('\n');
+		const item = this.items[index];
+		const line = lines[item.lineIndex];
+		const newLine = line.replace(/\[([x ])\]/i, checked ? '[x]' : '[ ]');
+		lines[item.lineIndex] = newLine;
+		const newContent = lines.join('\n');
+		await this.app.vault.modify(this.file, newContent);
+		await this.refresh();
+	}
+
+	async removeItem(index: number) {
+		if (!this.file) return;
+		const content = await this.app.vault.read(this.file);
+		const lines = content.split('\n');
+		const item = this.items[index];
+		lines.splice(item.lineIndex, 1);
+		const newContent = lines.join('\n');
+		await this.app.vault.modify(this.file, newContent);
+		await this.refresh();
+	}
+}

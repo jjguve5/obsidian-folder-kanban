@@ -1,0 +1,676 @@
+.checklist-side-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.checklist-side-view .checklist-container {
+    flex: 1;
+    overflow-y: auto;
+}
+/* Folder Kanban Styles */
+
+.folder-kanban-view {
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    padding: 0;
+    background-color: var(--background-primary);
+    display: flex;
+    flex-direction: column;
+}
+
+.kanban-view-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background-color: var(--background-secondary);
+}
+
+.kanban-view-title {
+    font-size: 1.2em;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.kanban-edit-btn {
+    padding: 6px 16px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.kanban-edit-btn:hover {
+    background-color: var(--interactive-accent-hover);
+}
+
+.kanban-board {
+    display: flex;
+    gap: 20px;
+    min-height: 100%;
+    align-items: flex-start;
+    padding: 20px;
+    flex: 1;
+    overflow-x: auto;
+}
+
+.kanban-column {
+    flex: 1;
+    min-width: 280px;
+    background-color: var(--background-secondary);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 100px);
+}
+
+.kanban-column-header {
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--background-modifier-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.kanban-column-title {
+    font-weight: 600;
+    font-size: 1.1em;
+    color: var(--text-normal);
+}
+
+.kanban-column-count {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-left: 8px;
+}
+
+.kanban-column-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 100px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.kanban-column-content.drag-over {
+    background-color: var(--background-modifier-hover);
+}
+
+.kanban-card {
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.kanban-card:hover {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+}
+
+.kanban-card.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+.kanban-card-title {
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: var(--text-normal);
+    word-wrap: break-word;
+}
+
+.kanban-card-tag {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.kanban-card-tag .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 500;
+}
+
+/* Scrollbar styling */
+.kanban-column-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.kanban-column-content::-webkit-scrollbar-track {
+    background: var(--background-secondary);
+    border-radius: 4px;
+}
+
+.kanban-column-content::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+.kanban-column-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .kanban-board {
+        flex-direction: column;
+    }
+    
+    .kanban-column {
+        width: 100%;
+        max-height: none;
+    }
+}
+
+/* Modal customization styles */
+.customize-section {
+    margin: 20px 0 24px 0;
+    padding: 16px 0;
+    border-top: 2px solid var(--background-modifier-border);
+}
+
+.customize-section h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin: 0 0 16px 0;
+    padding: 0;
+    letter-spacing: 0.3px;
+}
+
+.tag-colors-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.tag-color-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 12px;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.tag-color-row:hover {
+    background-color: var(--background-secondary);
+    border-color: var(--interactive-accent-hover);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.tag-color-label {
+    flex: 0 1 auto;
+    font-weight: 500;
+    color: var(--text-normal);
+    font-size: 0.92em;
+    font-family: var(--font-monospace);
+    letter-spacing: 0.3px;
+}
+
+.tag-color-row-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.tag-color-row input[type="color"] {
+    cursor: pointer;
+    width: 50px;
+    height: 40px;
+    border: 2px solid var(--background-modifier-border);
+    border-radius: 6px;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    padding: 2px;
+}
+
+.tag-color-row input[type="color"]:hover {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.tag-remove-btn {
+    cursor: pointer;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: none;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.95em;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    line-height: 1;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tag-remove-btn:hover {
+    color: var(--text-error, #e74c3c);
+    border-color: var(--text-error, #e74c3c);
+    background-color: rgba(231, 76, 60, 0.1);
+}
+
+.add-custom-tag-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.add-custom-tag-section .customize-section-label {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: var(--text-normal);
+    margin-bottom: 12px;
+    display: block;
+}
+
+.add-custom-tag-section .setting {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0;
+}
+
+.add-custom-tag-section input[type="text"],
+.add-custom-tag-section input[type="color"] {
+    padding: 8px;
+    background-color: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    transition: all 0.2s;
+}
+
+.add-custom-tag-section input[type="text"] {
+    flex: 1;
+    min-width: 150px;
+}
+
+.add-custom-tag-section input[type="color"] {
+    width: 50px;
+    height: 40px;
+    padding: 2px;
+    border-width: 2px;
+}
+
+.add-custom-tag-section input[type="text"]:focus,
+.add-custom-tag-section input[type="color"]:focus {
+    outline: none;
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+}
+
+.add-custom-btn {
+    padding: 8px 16px;
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9em;
+    transition: all 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.add-custom-btn:hover {
+    background-color: var(--interactive-accent-hover);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+    transform: translateY(-1px);
+}
+
+.modal-button-container {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 32px;
+    padding-top: 20px;
+    border-top: 2px solid var(--background-modifier-border);
+}
+
+.modal-button-container button {
+    padding: 10px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.95em;
+    transition: all 0.2s;
+}
+
+.modal-button-container button:first-child {
+    background-color: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.modal-button-container button:first-child:hover {
+    background-color: var(--interactive-accent-hover);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    transform: translateY(-1px);
+}
+
+.modal-button-container button:last-child {
+    background-color: var(--background-secondary);
+    color: var(--text-normal);
+}
+
+.modal-button-container button:last-child:hover {
+    background-color: var(--background-modifier-hover);
+    border-color: var(--text-muted);
+}
+
+/* Modal overlay styling */
+.prompt-results {
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.modal {
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.modal.is-active {
+    animation: modalSlideIn 0.2s ease-out;
+}
+
+@keyframes modalSlideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Floating Checklist Modal Styles */
+.floating-checklist {
+    position: absolute;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    min-width: 300px;
+    max-width: 400px;
+    max-height: 500px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: modalSlideIn 0.2s ease-out;
+}
+
+.checklist-title-bar {
+    padding: 12px 16px;
+    background: var(--background-modifier-alt);
+    border-bottom: 1px solid var(--background-modifier-border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: grab;
+    user-select: none;
+    border-radius: 8px 8px 0 0;
+}
+
+.checklist-title-bar:active {
+    cursor: grabbing;
+}
+
+.checklist-title-bar h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.checklist-close {
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 18px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.checklist-close:hover {
+    color: var(--text-normal);
+}
+
+.checklist-container {
+    padding: 12px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.checklist-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.checklist-item:last-child {
+    border-bottom: none;
+}
+
+.checklist-item input[type="checkbox"] {
+    cursor: pointer;
+    margin-right: 10px;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--interactive-accent);
+}
+
+.checklist-label {
+    cursor: pointer;
+    flex: 1;
+    min-width: 0;
+    display: block;
+    font-size: 13px;
+    color: var(--text-normal);
+    user-select: none;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.checklist-item input[type="checkbox"]:checked + .checklist-label {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+.checklist-progress {
+    padding: 8px 12px;
+    background: var(--background-modifier-alt);
+    border-top: 1px solid var(--background-modifier-border);
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+/* Bottom-right checklist button and panel */
+.checklist-fab {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.checklist-fab:hover {
+    filter: brightness(1.05);
+}
+
+.checklist-panel {
+    position: absolute;
+    right: 16px;
+    bottom: 64px;
+    width: 320px;
+    max-height: 50%;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.checklist-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--background-modifier-alt);
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.checklist-add-row {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.checklist-add-row input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.checklist-add-row button {
+    padding: 6px 10px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-modifier-success);
+    color: var(--text-normal);
+    cursor: pointer;
+}
+
+.checklist-new-row input[type="text"] {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.checklist-container input[type="text"] {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.checklist-remove-btn {
+    margin-left: 4px;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-modifier-hover);
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.checklist-remove-btn:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
+.card-progress {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.card-progress progress {
+    width: 100%;
+    height: 14px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.22), rgba(255,255,255,0.12));
+    border: 1px solid rgba(255,255,255,0.20);
+    border-radius: 999px;
+    overflow: hidden;
+    accent-color: var(--interactive-accent);
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.35);
+}
+
+.card-progress progress::-webkit-progress-bar {
+    background: transparent;
+}
+
+.card-progress progress::-webkit-progress-value {
+    background: linear-gradient(90deg, var(--interactive-accent) 0%, var(--interactive-accent-hover) 100%);
+    box-shadow: inset 0 0 3px rgba(0,0,0,0.25);
+}
+
+.card-progress progress::-moz-progress-bar {
+    background: linear-gradient(90deg, var(--interactive-accent) 0%, var(--interactive-accent-hover) 100%);
+    box-shadow: inset 0 0 3px rgba(0,0,0,0.25);
+}
+
+.card-progress-stats {
+    font-size: 12px;
+    color: var(--text-normal);
+    line-height: 1.3;
+    opacity: 0.8;
+}

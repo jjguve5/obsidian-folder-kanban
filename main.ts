@@ -962,30 +962,30 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 			});
 
 			// Add new tag color
+			let tagInputEl: HTMLInputElement | undefined;
+			let colorInputEl: HTMLInputElement | undefined;
 			new Setting(containerEl)
 				.setName('Add custom tag color')
-				.addText(text => text
-					.setPlaceholder('Tag name')
-					.onChange(value => text.inputEl.dataset.tag = value))
-				.addText(text => text
-					.setPlaceholder('#3b82f6')
-					.onChange(value => text.inputEl.dataset.color = value))
+				.addText(text => {
+					tagInputEl = text.inputEl;
+					return text.setPlaceholder('Tag name');
+				})
+				.addText(text => {
+					colorInputEl = text.inputEl;
+					return text.setPlaceholder('#3b82f6');
+				})
 				.addButton(btn => btn
 					.setButtonText('Add')
 					.onClick(async () => {
-						const inputs = containerEl.querySelectorAll('.setting-item:last-of-type input');
-						const tagInput = inputs[0] as HTMLInputElement;
-						const colorInput = inputs[1] as HTMLInputElement;
-						
-						const tag = tagInput?.value?.trim();
-						const color = colorInput?.value?.trim();
+						const tag = tagInputEl?.value?.trim();
+						const color = colorInputEl?.value?.trim();
 
-						if (tag && /^#[0-9A-F]{6}$/i.test(color)) {
+						if (tag && color && /^#[0-9A-F]{6}$/i.test(color)) {
 							this.plugin.settings.tagColors[activeBoardPath][tag] = color;
 							await this.plugin.saveSettings();
-							tagInput.value = '';
-							colorInput.value = '';
-							this.display();
+							tagInputEl!.value = '';
+							colorInputEl!.value = '';
+							void this.display();
 						}
 					}));
 		} else {

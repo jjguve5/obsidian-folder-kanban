@@ -786,7 +786,7 @@ class FolderKanbanView extends ItemView {
 				}
 			});
 
-			menu.showAtMouseEvent(e);
+			void menu.showAtMouseEvent(e);
 		});
 	}
 
@@ -848,7 +848,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName('Board configuration').setHeading();
+		new Setting(containerEl).setName('Configuration').setHeading();
 
 		// Board file name setting
 		new Setting(containerEl)

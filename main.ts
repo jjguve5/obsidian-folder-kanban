@@ -216,7 +216,7 @@ export default class FolderKanbanPlugin extends Plugin {
 			id: 'refresh-kanban-board',
 			name: 'Refresh kanban board',
 			callback: () => {
-				const activeView = this.app.workspace.getActiveViewOfType(FolderKanbanView) as FolderKanbanView | null;
+				const activeView = this.app.workspace.getActiveViewOfType(FolderKanbanView);
 				if (activeView) {
 					void activeView.refresh();
 					new Notice('Board refreshed!');
@@ -246,8 +246,8 @@ export default class FolderKanbanPlugin extends Plugin {
 			if (rightLeaf) {
 				// Pin and reveal so it shows as a dedicated top tab
 				rightLeaf.setPinned(false);
-				this.app.workspace.revealLeaf(rightLeaf);
-				this.app.workspace.setActiveLeaf(rightLeaf);
+				void this.app.workspace.revealLeaf(rightLeaf);
+				void this.app.workspace.setActiveLeaf(rightLeaf);
 			}
 		};
 		this.app.workspace.onLayoutReady(() => {
@@ -309,7 +309,7 @@ export default class FolderKanbanPlugin extends Plugin {
 			type: VIEW_TYPE_FOLDER_KANBAN,
 			state: { file: file.path }
 		});
-		this.app.workspace.revealLeaf(targetLeaf);
+		void this.app.workspace.revealLeaf(targetLeaf);
 	}
 
 	async openKanbanBoard(file: TFile) {
@@ -335,7 +335,7 @@ export default class FolderKanbanPlugin extends Plugin {
 			state: { file: file.path }
 		});
 
-		this.app.workspace.revealLeaf(leaf);
+		void this.app.workspace.revealLeaf(leaf);
 	}
 
 	async createBoardInFolder(folder: TFolder) {
@@ -848,7 +848,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName('Board options').setHeading();
+		new Setting(containerEl).setName('Board configuration').setHeading();
 
 		// Board file name setting
 		new Setting(containerEl)
@@ -857,9 +857,11 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 			.addText(text => text
 				.setPlaceholder('Board.md')
 				.setValue(this.plugin.settings.boardFileName)
-				.onChange(async (value) => {
-					this.plugin.settings.boardFileName = value || 'Board.md';
-					await this.plugin.saveSettings();
+				.onChange((value) => {
+					void (async () => {
+						this.plugin.settings.boardFileName = value || 'Board.md';
+						await this.plugin.saveSettings();
+					})();
 				}));
 
 		// Custom columns section
@@ -869,6 +871,9 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 			cls: 'setting-item-description'
 		});
 
+		let patternInputEl: HTMLInputElement;
+		let columnsInputEl: HTMLInputElement;
+
 		Object.entries(this.plugin.settings.customColumns).forEach(([pattern, columns]) => {
 			new Setting(containerEl)
 				.setName(`Columns for "${pattern}"`)
@@ -876,15 +881,15 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 				.addText(text => text
 					.setPlaceholder('To Do, In Progress, Done')
 					.setValue(columns.join(', '))
-					.onChange(async (value) => {
-						const newColumns = value.split(',').map(c => c.trim()).filter(c => c);
-						if (newColumns.length > 0) {
-							this.plugin.settings.customColumns[pattern] = newColumns;
-							await this.plugin.saveSettings();
-						}
-					}));
-
-			new Setting(containerEl)
+					.onChange((value) => {
+						void (async () => {
+							const newColumns = value.split(',').map(c => c.trim()).filter(c => c);
+							if (newColumns.length > 0) {
+								this.plugin.settings.customColumns[pattern] = newColumns;
+								await this.plugin.saveSettings();
+							}
+						})();
+					}))
 				.addButton(btn => btn
 					.setButtonText('Remove')
 					.onClick(() => {
@@ -896,11 +901,8 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 					}));
 		});
 
-		// Add new column pattern
-	let patternInputEl: HTMLInputElement | undefined;
-	let columnsInputEl: HTMLInputElement | undefined;
-	new Setting(containerEl)
-		.setName('Add new folder pattern')
+		new Setting(containerEl)
+			.setName('Add new folder pattern')
 		.addText(text => {
 			patternInputEl = text.inputEl;
 			return text.setPlaceholder('e.g., "project"');
@@ -960,12 +962,14 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 					.addText(text => text
 						.setPlaceholder('#3b82f6')
 						.setValue(color)
-						.onChange(async (value) => {
-							// Validate hex color
-							if (/^#[0-9A-F]{6}$/i.test(value)) {
-								this.plugin.settings.tagColors[activeBoardPath][tag] = value;
-								await this.plugin.saveSettings();
-							}
+						.onChange((value) => {
+							void (async () => {
+								// Validate hex color
+								if (/^#[0-9A-F]{6}$/i.test(value)) {
+									this.plugin.settings.tagColors[activeBoardPath][tag] = value;
+									await this.plugin.saveSettings();
+								}
+							})();
 						}))
 					.addButton(btn => {
 						if (tag !== 'default') {

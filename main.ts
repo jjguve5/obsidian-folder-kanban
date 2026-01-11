@@ -1016,7 +1016,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 					}));
 		} else {
 			containerEl.createEl('p', {
-				text: 'Open a Kanban board to customize tag colors for that board.',
+				text: 'Open a kanban board to customize tag colors for that board.',
 				cls: 'setting-item-description'
 			});
 		}
@@ -1087,7 +1087,7 @@ class BoardCustomizeModal extends Modal {
 		.setDesc('Separate columns with commas');
 
 		colsSetting.addText(text => text
-			.setPlaceholder('To Do, In Progress, Done')
+			.setPlaceholder('To do, in progress, done')
 			.setValue(this.tempColumns.join(', '))
 			.onChange(value => {
 				const newCols = value.split(',').map(c => c.trim()).filter(c => c);
@@ -1144,7 +1144,7 @@ class BoardCustomizeModal extends Modal {
 
 		const tagNameInput = addCustomRow.createEl('input', { 
 			type: 'text',
-			attr: { placeholder: 'e.g., Anatomy' } 
+			attr: { placeholder: 'e.g., anatomy' } 
 		});
 		tagNameInput.addEventListener('change', (e: Event) => {
 			const target = e.target as HTMLInputElement;

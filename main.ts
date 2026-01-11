@@ -780,7 +780,7 @@ class FolderKanbanView extends ItemView {
 						item.setTitle(`Move to ${col}`)
 							.setIcon('arrow-right')
 							.onClick(() => {
-								this.moveCard(card.filePath, index);
+								void this.moveCard(card.filePath, index);
 							});
 					});
 				}
@@ -879,7 +879,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 				.setName(`Columns for "${pattern}"`)
 				.setDesc('Separate columns with commas')
 				.addText(text => text
-					.setPlaceholder('To Do, In Progress, Done')
+					.setPlaceholder('To do, in progress, done')
 					.setValue(columns.join(', '))
 					.onChange((value) => {
 						void (async () => {
@@ -909,7 +909,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		})
 		.addText(text => {
 			columnsInputEl = text.inputEl;
-			return text.setPlaceholder('e.g., "Backlog, Active, Review, Done"');
+			return text.setPlaceholder('e.g., "backlog, active, review, done"');
 		})
 		.addButton(btn => btn
 			.setButtonText('Add')

@@ -733,11 +733,21 @@ class FolderKanbanView extends ItemView {
 			}
 		}
 	}).catch(() => {});
-		cardEl.addEventListener('dragend', () => {
-			cardEl.classList.remove('dragging');
-		}, false);
 
-		// Click to open note
+	// Drag events
+	cardEl.addEventListener('dragstart', (e: DragEvent) => {
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', card.filePath);
+		}
+		cardEl.classList.add('dragging');
+	}, false);
+
+	cardEl.addEventListener('dragend', () => {
+		cardEl.classList.remove('dragging');
+	}, false);
+
+	// Click to open note
 		cardEl.addEventListener('click', () => {
 			const file = this.app.vault.getAbstractFileByPath(card.filePath);
 			if (file instanceof TFile) {

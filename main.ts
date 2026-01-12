@@ -853,7 +853,7 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 		// Board file name setting
 		new Setting(containerEl)
 			.setName('Board file name')
-			.setDesc('Name of the file that will be treated as a kanban board (default: Board.md)')
+			.setDesc('Name of the file that will be treated as a kanban board (default: board.md)')
 			.addText(text => text
 				.setPlaceholder('Board.md')
 				.setValue(this.plugin.settings.boardFileName)
@@ -905,11 +905,11 @@ class FolderKanbanSettingTab extends PluginSettingTab {
 			.setName('Add new folder pattern')
 		.addText(text => {
 			patternInputEl = text.inputEl;
-			return text.setPlaceholder('e.g., "project"');
+			return text.setPlaceholder('E.g., "project"');
 		})
 		.addText(text => {
 			columnsInputEl = text.inputEl;
-			return text.setPlaceholder('e.g., "backlog, active, review, done"');
+			return text.setPlaceholder('E.g., "backlog, active, review, done"');
 		})
 		.addButton(btn => btn
 			.setButtonText('Add')
@@ -1144,7 +1144,7 @@ class BoardCustomizeModal extends Modal {
 
 		const tagNameInput = addCustomRow.createEl('input', { 
 			type: 'text',
-			attr: { placeholder: 'e.g., anatomy' } 
+			attr: { placeholder: 'E.g., anatomy' } 
 		});
 		tagNameInput.addEventListener('change', (e: Event) => {
 			const target = e.target as HTMLInputElement;
@@ -1259,7 +1259,7 @@ class ChecklistView extends ItemView {
 		const newRow = list.createDiv({ cls: 'checklist-item checklist-new-row' });
 		const newCb = newRow.createEl('input', { type: 'checkbox' });
 		const newInput = newRow.createEl('input', { type: 'text' });
-		newInput.placeholder = 'Add item and press Enter';
+		newInput.placeholder = 'Add item and press enter';
 		const tryAdd = async () => {
 			const text = newInput.value.trim();
 			if (text && this.file) {

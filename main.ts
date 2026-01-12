@@ -723,29 +723,16 @@ class FolderKanbanView extends ItemView {
 			cardEl.setAttribute('checked', checked.toString());
 			cardEl.setAttribute('total', total.toString());
 
-			const shadowRoot = cardEl.shadowRoot;
-			if (shadowRoot) {
-				const nextTaskEl = Array.from(shadowRoot.children).find(el => el.classList.contains('next-task'));
-				if (nextTaskEl) {
-					if (nextTask) {
-						nextTaskEl.textContent = nextTask;
-						nextTaskEl.classList.remove('hidden');
-					} else {
-						nextTaskEl.classList.add('hidden');
-					}
-				}
+		const nextTaskEl = cardEl.querySelector('.next-task');
+		if (nextTaskEl) {
+			if (nextTask) {
+				nextTaskEl.textContent = nextTask;
+				nextTaskEl.classList.remove('hidden');
+			} else {
+				nextTaskEl.classList.add('hidden');
 			}
-		}).catch(() => {});
-
-		// Drag events - handle on element itself
-		cardEl.addEventListener('dragstart', (e: DragEvent) => {
-			if (e.dataTransfer) {
-				e.dataTransfer.effectAllowed = 'move';
-				e.dataTransfer.setData('text/plain', card.filePath);
-			}
-			cardEl.classList.add('dragging');
-		}, false);
-
+		}
+	}).catch(() => {});
 		cardEl.addEventListener('dragend', () => {
 			cardEl.classList.remove('dragging');
 		}, false);

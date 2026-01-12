@@ -1175,8 +1175,14 @@ class BoardCustomizeModal extends Modal {
 	saveBtn.addEventListener('click', () => {
 		void (async () => {
 			if (this.boardFile) {
-				const boardContent = this.boardContent;
-				await this.app.vault.modify(this.boardFile, boardContent);
+				// Update board content with new columns
+				let updatedContent = this.boardContent;
+				const columnMatch = updatedContent.match(/(##\s+Columns\s*\n)([^\n]*)/i);
+				if (columnMatch) {
+					const newColumnLine = this.tempColumns.join(', ');
+					updatedContent = updatedContent.replace(columnMatch[0], `${columnMatch[1]}${newColumnLine}`);
+				}
+				await this.app.vault.modify(this.boardFile, updatedContent);
 				await new Promise(resolve => setTimeout(resolve, 100));
 			}
 			this.plugin.settings.tagColors[this.boardPath] = this.tempTagColors;

@@ -68,7 +68,7 @@ export class KanbanCard extends HTMLElement {
 
 	attributeChangedCallback(name: string) {
 		if (name === 'checked' || name === 'total') {
-			const progressEl = this.find('kanban-progress') as KanbanProgress | null;
+			const progressEl = this.querySelector('kanban-progress') as KanbanProgress | null;
 			if (progressEl) {
 				progressEl.setAttribute(name, this.getAttribute(name) || '0');
 				// Show/hide progress based on total value
@@ -166,7 +166,7 @@ export class KanbanProgress extends HTMLElement {
 
 		const progressFill = document.createElement('div');
 		progressFill.className = 'progress-fill';
-		progressFill.style.setProperty('width', `${percent}%`);
+		progressFill.style.width = `${percent}%`;
 		progressFill.style.setProperty('background', `linear-gradient(90deg, ${tagColor} 0%, ${this.lightenColor(tagColor)} 100%)`);
 
 		progressBar.appendChild(progressFill);
@@ -186,7 +186,8 @@ export class KanbanProgress extends HTMLElement {
 		const r = Math.min(255, (num >> 16) + 60);
 		const g = Math.min(255, ((num >> 8) & 0x00ff) + 60);
 		const b = Math.min(255, (num & 0x0000ff) + 60);
-		return '#' + (0x1000000 + r * 0x10000 + g * 0x100 + b).toString(16).substring(1);
+		const result = (r << 16) | (g << 8) | b;
+		return '#' + result.toString(16).padStart(6, '0');
 	}
 }
 

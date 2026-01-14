@@ -5,6 +5,6 @@
 	"minAppVersion": "0.15.0",
 	"description": "Transform folders into Kanban boards with customizable columns and per-board tag colors.",
 	"author": "jjguve5",
-	"authorUrl": "https://github.com/jjguve5/obsidian-folder-kanban",
+	"authorUrl": "https://github.com/jjguve5",
 	"isDesktopOnly": false
 }
